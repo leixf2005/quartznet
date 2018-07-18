@@ -33,6 +33,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Quartz.Plugins", "src\Quart
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Quartz.Plugins.TimeZoneConverter", "src\Quartz.Plugins.TimeZoneConverter\Quartz.Plugins.TimeZoneConverter.csproj", "{88F6D094-A4CD-4B89-84FB-FBD0821A9D99}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Quartz.JobStore.RavenDB4", "src\Quartz.JobStore.RavenDB4\Quartz.JobStore.RavenDB4.csproj", "{114CF337-5C77-4623-A230-89711AF92445}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -75,6 +77,10 @@ Global
 		{88F6D094-A4CD-4B89-84FB-FBD0821A9D99}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{88F6D094-A4CD-4B89-84FB-FBD0821A9D99}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{88F6D094-A4CD-4B89-84FB-FBD0821A9D99}.Release|Any CPU.Build.0 = Release|Any CPU
+		{114CF337-5C77-4623-A230-89711AF92445}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{114CF337-5C77-4623-A230-89711AF92445}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{114CF337-5C77-4623-A230-89711AF92445}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{114CF337-5C77-4623-A230-89711AF92445}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

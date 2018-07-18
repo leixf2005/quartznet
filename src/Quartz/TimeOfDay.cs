@@ -39,6 +39,13 @@ namespace Quartz
     public class TimeOfDay
     {
         /// <summary>
+        /// JSON serialization.
+        /// </summary>
+        private TimeOfDay()
+        {
+        }
+        
+        /// <summary>
         /// Create a TimeOfDay instance for the given hour, minute and second.
         /// </summary>
         /// <param name="hour">The hour of day, between 0 and 23.</param>
