@@ -77,7 +77,7 @@ namespace Quartz.Impl.AdoJobStore
                     {
                         try
                         {
-                            Monitor.Wait(syncRoot);
+                            Monitor.Wait(syncRoot, TimeSpan.FromSeconds(1));
                         }
                         catch (ThreadInterruptedException)
                         {

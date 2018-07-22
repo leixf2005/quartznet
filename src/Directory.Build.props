@@ -41,11 +41,16 @@
     <TargetFullFrameworkVersion>net452</TargetFullFrameworkVersion>
 
     <IsTestProject>$(MSBuildProjectName.Contains('Tests'))</IsTestProject>
+    <IsExampleProject>$(MSBuildProjectName.Contains('Example'))</IsExampleProject>
 
   </PropertyGroup>
 
   <ItemGroup Condition="'$(IsTestProject)' != 'true' and '$(SourceLinkEnabled)' != 'false'">
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0-beta-63102-01" PrivateAssets="All"/>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(IsTestProject)' != 'true' and '$(IsExampleProject)' != 'true'">
+    <PackageReference Include="ConfigureAwaitChecker.Analyzer" Version="2.0.0" PrivateAssets="All" />
   </ItemGroup>
 
   <PropertyGroup Condition=" '$(TargetFramework)' == '$(TargetFullFrameworkVersion)' ">

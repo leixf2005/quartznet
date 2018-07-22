@@ -24,7 +24,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -118,10 +117,7 @@ namespace Quartz.Simpl
             return TaskUtil.CompletedTask;
         }
 
-        /// <summary>
-        /// Called by the QuartzScheduler to inform the <see cref="IJobStore" /> that
-        /// the scheduler has started.
-        /// </summary>
+        /// <inheritdoc />
         public virtual Task SchedulerStarted(CancellationToken cancellationToken = default)
         {
             // nothing to do
@@ -138,31 +134,20 @@ namespace Quartz.Simpl
             return TaskUtil.CompletedTask;
         }
 
-        /// <summary>
-        /// Called by the QuartzScheduler to inform the JobStore that
-        /// the scheduler has resumed after being paused.
-        /// </summary>
+        /// <inheritdoc />
         public Task SchedulerResumed(CancellationToken cancellationToken = default)
         {
             // nothing to do
             return TaskUtil.CompletedTask;
         }
 
-        /// <summary>
-        /// Called by the QuartzScheduler to inform the <see cref="IJobStore" /> that
-        /// it should free up all of it's resources because the scheduler is
-        /// shutting down.
-        /// </summary>
+        /// <inheritdoc />
         public virtual Task Shutdown(CancellationToken cancellationToken = default)
         {
             return TaskUtil.CompletedTask;
         }
 
-        /// <summary>
-        /// Returns whether this instance supports persistence.
-        /// </summary>
-        /// <value></value>
-        /// <returns></returns>
+        /// <inheritdoc />
         public virtual bool SupportsPersistence => false;
 
         /// <summary>
@@ -203,12 +188,7 @@ namespace Quartz.Simpl
 
         private ILog Log { get; }
 
-        /// <summary>
-        /// Store the given <see cref="IJobDetail" /> and <see cref="ITrigger" />.
-        /// </summary>
-        /// <param name="newJob">The <see cref="IJobDetail" /> to be stored.</param>
-        /// <param name="newTrigger">The <see cref="ITrigger" /> to be stored.</param>
-        /// <param name="cancellationToken">The cancellation instruction.</param>
+        /// <inheritdoc />
         public virtual Task StoreJobAndTrigger(
             IJobDetail newJob,
             IOperableTrigger newTrigger,
@@ -219,38 +199,7 @@ namespace Quartz.Simpl
             return TaskUtil.CompletedTask;
         }
 
-        /// <summary>
-        /// Returns true if the given job group is paused.
-        /// </summary>
-        /// <param name="groupName">Job group name</param>
-        /// <param name="cancellationToken">The cancellation instruction.</param>
-        /// <returns></returns>
-        public virtual Task<bool> IsJobGroupPaused(
-            string groupName,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(pausedJobGroups.Contains(groupName));
-        }
-
-        /// <summary>
-        /// Returns true if the given TriggerGroup is paused.
-        /// </summary>
-        /// <returns></returns>
-        public virtual Task<bool> IsTriggerGroupPaused(
-            string groupName,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(pausedTriggerGroups.Contains(groupName));
-        }
-
-        /// <summary>
-        /// Store the given <see cref="IJob" />.
-        /// </summary>
-        /// <param name="newJob">The <see cref="IJob" /> to be stored.</param>
-        /// <param name="replaceExisting">If <see langword="true" />, any <see cref="IJob" /> existing in the
-        /// <see cref="IJobStore" /> with the same name and group should be
-        /// over-written.</param>
-        /// <param name="cancellationToken">The cancellation instruction.</param>
+        /// <inheritdoc />
         public virtual Task StoreJob(
             IJobDetail newJob,
             bool replaceExisting,
@@ -299,15 +248,7 @@ namespace Quartz.Simpl
             }
         }
 
-        /// <summary>
-        /// Remove (delete) the <see cref="IJob" /> with the given
-        /// name, and any <see cref="ITrigger" /> s that reference
-        /// it.
-        /// </summary>
-        /// <returns>
-        /// 	<see langword="true" /> if a <see cref="IJob" /> with the given name and
-        /// group was found and removed from the store.
-        /// </returns>
+        /// <inheritdoc />
         public virtual Task<bool> RemoveJob(
             JobKey jobKey,
             CancellationToken cancellationToken = default)
@@ -1570,11 +1511,7 @@ namespace Quartz.Simpl
             return true;
         }
 
-        /// <summary>
-        /// Get a handle to the next trigger to be fired, and mark it as 'reserved'
-        /// by the calling scheduler.
-        /// </summary>
-        /// <seealso cref="ITrigger" />
+        /// <inheritdoc />
         public virtual Task<IReadOnlyCollection<IOperableTrigger>> AcquireNextTriggers(
             DateTimeOffset noLaterThan,
             int maxCount,
@@ -1941,35 +1878,8 @@ namespace Quartz.Simpl
             }
         }
 
-        /// <summary>
-        /// Peeks the triggers.
-        /// </summary>
-        /// <returns></returns>
-        protected internal virtual Task<string> PeekTriggers()
-        {
-            StringBuilder str = new StringBuilder();
-
-            lock (lockObject)
-            {
-                foreach (TriggerWrapper tw in triggersByKey.Values)
-                {
-                    str.Append(tw.Trigger.Key.Name);
-                    str.Append("/");
-                }
-
-                str.Append(" | ");
-
-                foreach (TriggerWrapper tw in timeTriggers)
-                {
-                    str.Append(tw.Trigger.Key.Name);
-                    str.Append("->");
-                }
-            }
-
-            return Task.FromResult(str.ToString());
-        }
-
-        /// <seealso cref="IJobStore.GetPausedTriggerGroups" />
+        /// <inheritdoc />
+        /// <seealso cref="M:Quartz.Spi.IJobStore.GetPausedTriggerGroups(System.Threading.CancellationToken)" />
         public virtual Task<IReadOnlyCollection<string>> GetPausedTriggerGroups(
             CancellationToken cancellationToken = default)
         {

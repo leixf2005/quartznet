@@ -4,29 +4,32 @@ using System.Collections.Generic;
 using Quartz.Impl.Triggers;
 using Quartz.Simpl;
 using Quartz.Spi;
+using Quartz.Util;
 
 namespace Quartz.Impl.RavenDB
 {
-    public class Trigger
+    internal class Trigger : IHasGroup
     {
-        public string Name { get; set; }
-        public string Group { get; set; }
-        public string Key => Name + "/" + Group;
+        public string Id { get; private set; }
+        public string Name { get; private set; }
+        public string Group { get; private set; }
 
-        public string JobName { get; set; }
-        public string JobKey { get; set; }
-        public string Scheduler { get; set; }
+        public string JobName { get; private set; }
+        public string JobKey { get; private set; }
+        public string Scheduler { get; private set; }
 
-        public InternalTriggerState State { get; set; }
-        public string Description { get; set; }
-        public string CalendarName { get; set; }
-        public IDictionary<string, object> JobDataMap { get; set; }
+        public InternalTriggerState State { get; internal set; }
+        public string Description { get; private set; }
+        public string CalendarName { get; private set; }
+        public IDictionary<string, object> JobDataMap { get; private set; }
         public string FireInstanceId { get; set; }
-        public int MisfireInstruction { get; set; }
-        public DateTimeOffset? FinalFireTimeUtc { get; set; }
-        public DateTimeOffset? EndTimeUtc { get; set; }
-        public DateTimeOffset StartTimeUtc { get; set; }
+        public int MisfireInstruction { get; private set; }
+        public DateTimeOffset? FinalFireTimeUtc { get; private set; }
+        public DateTimeOffset? EndTimeUtc { get; private set; }
+        public DateTimeOffset StartTimeUtc { get; private set; }
+
         public DateTimeOffset? NextFireTimeUtc { get; set; }
+
         // Used for sorting triggers by time - more efficient than sorting strings
         public long NextFireTimeTicks { get; set; }
 
@@ -34,10 +37,10 @@ namespace Quartz.Impl.RavenDB
         public int Priority { get; set; }
         public bool HasMillisecondPrecision { get; set; }
 
-        public CronOptions Cron { get; set; }
-        public SimpleOptions Simp { get; set; }
-        public CalendarOptions Cal { get; set; }
-        public DailyTimeOptions Day { get; set; }
+        public CronOptions Cron { get; private set; }
+        public SimpleOptions Simp { get; private set; }
+        public CalendarOptions Cal { get; private set; }
+        public DailyTimeOptions Day { get; private set; }
 
         public class CronOptions
         {
@@ -73,18 +76,24 @@ namespace Quartz.Impl.RavenDB
             public string TimeZoneId { get; set; }
         }
 
-        public Trigger(IOperableTrigger newTrigger, string schedulerInstanceName)
+        public Trigger(
+            IOperableTrigger newTrigger,
+            string schedulerInstanceName)
         {
             if (newTrigger == null)
             {
                 return;
             }
 
+            newTrigger.Key.Validate();
+            newTrigger.JobKey.Validate();
+
+            Id = newTrigger.Key.DocumentId(schedulerInstanceName);
             Name = newTrigger.Key.Name;
             Group = newTrigger.Key.Group;
 
             JobName = newTrigger.JobKey.Name;
-            JobKey = newTrigger.JobKey.DocumentId();
+            JobKey = newTrigger.JobKey.DocumentId(schedulerInstanceName);
             Scheduler = schedulerInstanceName;
 
             State = InternalTriggerState.Waiting;
@@ -109,75 +118,64 @@ namespace Quartz.Impl.RavenDB
             // Init trigger specific properties according to type of newTrigger. 
             // If an option doesn't apply to the type of trigger it will stay null by default.
 
-            if (newTrigger is CronTriggerImpl cronTriggerImpl)
+            if (newTrigger is CronTriggerImpl cronTrigger)
             {
-                Cron = new CronOptions
-                {
-                    CronExpression = cronTriggerImpl.CronExpressionString,
-                    TimeZoneId = cronTriggerImpl.TimeZone.Id
-                };
-                return;
+                Cron = new CronOptions {CronExpression = cronTrigger.CronExpressionString, TimeZoneId = cronTrigger.TimeZone.Id};
             }
-
-            if (newTrigger is SimpleTriggerImpl simpTriggerImpl)
+            else if (newTrigger is SimpleTriggerImpl simpleTrigger)
             {
-                Simp = new SimpleOptions
-                {
-                    RepeatCount = simpTriggerImpl.RepeatCount,
-                    RepeatInterval = simpTriggerImpl.RepeatInterval
-                };
-                return;
+                Simp = new SimpleOptions {RepeatCount = simpleTrigger.RepeatCount, RepeatInterval = simpleTrigger.RepeatInterval};
             }
-
-            if (newTrigger is CalendarIntervalTriggerImpl calTriggerImpl)
+            else if (newTrigger is CalendarIntervalTriggerImpl calendarIntervalTrigger)
             {
                 Cal = new CalendarOptions
                 {
-                    RepeatIntervalUnit = calTriggerImpl.RepeatIntervalUnit,
-                    RepeatInterval = calTriggerImpl.RepeatInterval,
-                    TimesTriggered = calTriggerImpl.TimesTriggered,
-                    TimeZoneId = calTriggerImpl.TimeZone.Id,
-                    PreserveHourOfDayAcrossDaylightSavings = calTriggerImpl.PreserveHourOfDayAcrossDaylightSavings,
-                    SkipDayIfHourDoesNotExist = calTriggerImpl.SkipDayIfHourDoesNotExist
+                    RepeatIntervalUnit = calendarIntervalTrigger.RepeatIntervalUnit,
+                    RepeatInterval = calendarIntervalTrigger.RepeatInterval,
+                    TimesTriggered = calendarIntervalTrigger.TimesTriggered,
+                    TimeZoneId = calendarIntervalTrigger.TimeZone.Id,
+                    PreserveHourOfDayAcrossDaylightSavings = calendarIntervalTrigger.PreserveHourOfDayAcrossDaylightSavings,
+                    SkipDayIfHourDoesNotExist = calendarIntervalTrigger.SkipDayIfHourDoesNotExist
                 };
-                return;
             }
-
-            if (newTrigger is DailyTimeIntervalTriggerImpl dayTriggerImpl)
+            else if (newTrigger is DailyTimeIntervalTriggerImpl dailyTimeIntervalTrigger)
             {
                 Day = new DailyTimeOptions
                 {
-                    RepeatCount = dayTriggerImpl.RepeatCount,
-                    RepeatIntervalUnit = dayTriggerImpl.RepeatIntervalUnit,
-                    RepeatInterval = dayTriggerImpl.RepeatInterval,
-                    StartTimeOfDay = dayTriggerImpl.StartTimeOfDay,
-                    EndTimeOfDay = dayTriggerImpl.EndTimeOfDay,
-                    DaysOfWeek = new HashSet<DayOfWeek>(dayTriggerImpl.DaysOfWeek),
-                    TimesTriggered = dayTriggerImpl.TimesTriggered,
-                    TimeZoneId = dayTriggerImpl.TimeZone.Id
+                    RepeatCount = dailyTimeIntervalTrigger.RepeatCount,
+                    RepeatIntervalUnit = dailyTimeIntervalTrigger.RepeatIntervalUnit,
+                    RepeatInterval = dailyTimeIntervalTrigger.RepeatInterval,
+                    StartTimeOfDay = dailyTimeIntervalTrigger.StartTimeOfDay,
+                    EndTimeOfDay = dailyTimeIntervalTrigger.EndTimeOfDay,
+                    DaysOfWeek = new HashSet<DayOfWeek>(dailyTimeIntervalTrigger.DaysOfWeek),
+                    TimesTriggered = dailyTimeIntervalTrigger.TimesTriggered,
+                    TimeZoneId = dailyTimeIntervalTrigger.TimeZone.Id
                 };
+            }
+            else
+            {
+                throw new ArgumentException("unsupported trigger typer");
             }
         }
 
         public IOperableTrigger Deserialize()
         {
             var triggerBuilder = TriggerBuilder.Create()
-               .WithIdentity(Name, Group)
-               .WithDescription(Description)
-               .ModifiedByCalendar(CalendarName)
-               .WithPriority(Priority)
-               .StartAt(StartTimeUtc)
-               .EndAt(EndTimeUtc)
-               .ForJob(new JobKey(JobName, Group))
-               .UsingJobData(new JobDataMap(JobDataMap));
-
+                .WithIdentity(Name, Group)
+                .WithDescription(Description)
+                .ModifiedByCalendar(CalendarName)
+                .WithPriority(Priority)
+                .StartAt(StartTimeUtc)
+                .EndAt(EndTimeUtc)
+                .ForJob(new JobKey(JobName, Group))
+                .UsingJobData(new JobDataMap(JobDataMap));
 
             if (Cron != null)
             {
                 triggerBuilder = triggerBuilder.WithCronSchedule(Cron.CronExpression, builder =>
                 {
                     builder
-                        .InTimeZone(TimeZoneInfo.FindSystemTimeZoneById(Cron.TimeZoneId));
+                        .InTimeZone(TimeZoneUtil.FindTimeZoneById(Cron.TimeZoneId));
                 });
             }
             else if (Simp != null)
@@ -195,7 +193,7 @@ namespace Quartz.Impl.RavenDB
                 {
                     builder
                         .WithInterval(Cal.RepeatInterval, Cal.RepeatIntervalUnit)
-                        .InTimeZone(TimeZoneInfo.FindSystemTimeZoneById(Cal.TimeZoneId))
+                        .InTimeZone(TimeZoneUtil.FindTimeZoneById(Cal.TimeZoneId))
                         .PreserveHourOfDayAcrossDaylightSavings(Cal.PreserveHourOfDayAcrossDaylightSavings)
                         .SkipDayIfHourDoesNotExist(Cal.SkipDayIfHourDoesNotExist);
                 });
@@ -207,7 +205,7 @@ namespace Quartz.Impl.RavenDB
                     builder
                         .WithRepeatCount(Day.RepeatCount)
                         .WithInterval(Day.RepeatInterval, Day.RepeatIntervalUnit)
-                        .InTimeZone(TimeZoneInfo.FindSystemTimeZoneById(Day.TimeZoneId))
+                        .InTimeZone(TimeZoneUtil.FindTimeZoneById(Day.TimeZoneId))
                         .EndingDailyAt(Day.EndTimeOfDay)
                         .StartingDailyAt(Day.StartTimeOfDay)
                         .OnDaysOfTheWeek(Day.DaysOfWeek);
@@ -216,7 +214,7 @@ namespace Quartz.Impl.RavenDB
 
             var trigger = triggerBuilder.Build();
 
-            var returnTrigger = (IOperableTrigger)trigger;
+            var returnTrigger = (IOperableTrigger) trigger;
             returnTrigger.SetNextFireTimeUtc(NextFireTimeUtc);
             returnTrigger.SetPreviousFireTimeUtc(PreviousFireTimeUtc);
             returnTrigger.FireInstanceId = FireInstanceId;
@@ -235,29 +233,23 @@ namespace Quartz.Impl.RavenDB
         }
     }
 
-
-
     internal class TriggerComparator : IComparer<Trigger>, IEquatable<TriggerComparator>
     {
-        private readonly FireTimeComparator ftc = new FireTimeComparator();
+        private static readonly FireTimeComparer fireTimeComparer = new FireTimeComparer();
 
+        /// <inheritdoc />
         public int Compare(Trigger trig1, Trigger trig2)
         {
-            return ftc.Compare(trig1, trig2);
+            return fireTimeComparer.Compare(trig1, trig2);
         }
 
+        /// <inheritdoc />
         public override bool Equals(object obj)
         {
             return obj is TriggerComparator;
         }
 
-        /// <summary>
-        /// Indicates whether the current object is equal to another object of the same type.
-        /// </summary>
-        /// <returns>
-        /// true if the current object is equal to the <paramref name="other"/> parameter; otherwise, false.
-        /// </returns>
-        /// <param name="other">An object to compare with this object.</param>
+        /// <inheritdoc />
         public bool Equals(TriggerComparator other)
         {
             return true;
@@ -272,42 +264,43 @@ namespace Quartz.Impl.RavenDB
         /// <filterpriority>2</filterpriority>
         public override int GetHashCode()
         {
-            return ftc?.GetHashCode() ?? 0;
+            return fireTimeComparer?.GetHashCode() ?? 0;
         }
-    }
 
-    public class FireTimeComparator : IComparer<Trigger>
-    {
-        public int Compare(Trigger trig1, Trigger trig2)
+        private class FireTimeComparer : IComparer<Trigger>
         {
-            var t1 = trig1.NextFireTimeUtc;
-            var t2 = trig2.NextFireTimeUtc;
-
-            if (t1 != null || t2 != null)
+            /// <inheritdoc />
+            public int Compare(Trigger trig1, Trigger trig2)
             {
-                if (t1 == null)
+                var t1 = trig1.NextFireTimeUtc;
+                var t2 = trig2.NextFireTimeUtc;
+
+                if (t1 != null || t2 != null)
                 {
-                    return 1;
+                    if (t1 == null)
+                    {
+                        return 1;
+                    }
+
+                    if (t2 == null)
+                    {
+                        return -1;
+                    }
+
+                    if (t1 < t2)
+                    {
+                        return -1;
+                    }
+
+                    if (t1 > t2)
+                    {
+                        return 1;
+                    }
                 }
 
-                if (t2 == null)
-                {
-                    return -1;
-                }
-
-                if (t1 < t2)
-                {
-                    return -1;
-                }
-
-                if (t1 > t2)
-                {
-                    return 1;
-                }
+                var comp = trig2.Priority - trig1.Priority;
+                return comp != 0 ? comp : 0;
             }
-
-            var comp = trig2.Priority - trig1.Priority;
-            return comp != 0 ? comp : 0;
         }
     }
 }

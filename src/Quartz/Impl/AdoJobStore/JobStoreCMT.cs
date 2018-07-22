@@ -56,7 +56,7 @@ namespace Quartz.Impl.AdoJobStore
         /// </summary>
         public override Task Initialize(
             ITypeLoadHelper loadHelper, 
-            ISchedulerSignaler signaler,
+            ISchedulerSignaler schedulerSignaler,
             CancellationToken cancellationToken = default)
         {
             if (LockHandler == null)
@@ -66,7 +66,7 @@ namespace Quartz.Impl.AdoJobStore
                 UseDBLocks = true;
             }
 
-            base.Initialize(loadHelper, signaler, cancellationToken);
+            base.Initialize(loadHelper, schedulerSignaler, cancellationToken);
 
             Log.Info("JobStoreCMT initialized.");
             return TaskUtil.CompletedTask;
@@ -174,13 +174,16 @@ namespace Quartz.Impl.AdoJobStore
             }
             finally
             {
-                try
+                if (transOwner)
                 {
-                    await ReleaseLock(requestorId, lockName, transOwner, cancellationToken).ConfigureAwait(false);
-                }
-                finally
-                {
-                    CleanupConnection(conn);
+                    try
+                    {
+                        await ReleaseLock(requestorId, lockName, cancellationToken).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        CleanupConnection(conn);
+                    }
                 }
             }
         }

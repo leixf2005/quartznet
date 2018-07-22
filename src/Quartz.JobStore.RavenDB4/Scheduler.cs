@@ -1,14 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 
-
 namespace Quartz.Impl.RavenDB
 {
-    public class Scheduler
+    internal class Scheduler
     {
         public Scheduler()
         {
             Calendars = new Dictionary<string, ICalendar>();
+            PausedTriggerGroups = new HashSet<string>();
             PausedJobGroups = new HashSet<string>();
             BlockedJobs = new HashSet<string>();
             LastCheckinTime = DateTimeOffset.MinValue;
@@ -16,11 +16,12 @@ namespace Quartz.Impl.RavenDB
         }
 
         public string InstanceName { get; set; }
-        public DateTimeOffset LastCheckinTime { get; set; }
-        public DateTimeOffset CheckinInterval { get; set; }
-        public string State { get; set; }
-        public Dictionary<string, ICalendar> Calendars { get; set; }
-        public HashSet<string> PausedJobGroups { get; set; }
-        public HashSet<string> BlockedJobs { get; set; }
+        public DateTimeOffset LastCheckinTime { get; private set; }
+        public DateTimeOffset CheckinInterval { get; private set; }
+        public SchedulerState State { get; set; }
+        public Dictionary<string, ICalendar> Calendars { get; private set; }
+        public HashSet<string> PausedTriggerGroups { get; private set; }
+        public HashSet<string> PausedJobGroups { get; private set; }
+        public HashSet<string> BlockedJobs { get; private set; }
     }
-}  
+}

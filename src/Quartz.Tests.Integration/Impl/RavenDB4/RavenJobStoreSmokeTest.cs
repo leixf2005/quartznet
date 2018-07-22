@@ -16,8 +16,6 @@ namespace Quartz.Tests.Integration.Impl.RavenDB4
     {
         private ILogProvider oldProvider;
 
-        private const string KeyResetEvent = "ResetEvent";
-
         [OneTimeSetUp]
         public void FixtureSetUp()
         {
@@ -32,7 +30,7 @@ namespace Quartz.Tests.Integration.Impl.RavenDB4
             // default back to old
             LogProvider.SetCurrentLogProvider(oldProvider);
         }
-        
+
         [Test]
         [Category("ravendb")]
         public async Task TestRavenJobStore()
@@ -60,6 +58,5 @@ namespace Quartz.Tests.Integration.Impl.RavenDB4
 
             Assert.IsEmpty(FailFastLoggerFactoryAdapter.Errors, "Found error from logging output");
         }
-
     }
 }

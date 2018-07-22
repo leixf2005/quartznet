@@ -9,12 +9,12 @@ namespace Quartz.Impl.RavenDB
         Task<bool> ObtainLock(
             Guid requestorId,
             RavenConnection connection,
-            string lockName,
+            LockType lockType,
             CancellationToken cancellationToken = default);
 
         Task ReleaseLock(
             Guid requestorId,
-            string lockName,
+            LockType lockType,
             CancellationToken cancellationToken = default);
     }
 }

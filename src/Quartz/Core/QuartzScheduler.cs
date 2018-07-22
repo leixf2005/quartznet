@@ -2225,20 +2225,6 @@ namespace Quartz.Core
             }
         }
 
-        public virtual Task<bool> IsJobGroupPaused(
-            string groupName,
-            CancellationToken cancellationToken = default)
-        {
-            return resources.JobStore.IsJobGroupPaused(groupName, cancellationToken);
-        }
-
-        public virtual Task<bool> IsTriggerGroupPaused(
-            string groupName,
-            CancellationToken cancellationToken = default)
-        {
-            return resources.JobStore.IsTriggerGroupPaused(groupName, cancellationToken);
-        }
-
         ///<summary>
         ///Obtains a lifetime service object to control the lifetime policy for this instance.
         ///</summary>
@@ -2305,16 +2291,6 @@ namespace Quartz.Core
         void IRemotableQuartzScheduler.AddJob(IJobDetail jobDetail, bool replace, bool storeNonDurableWhileAwaitingScheduling)
         {
             AddJob(jobDetail, replace, storeNonDurableWhileAwaitingScheduling).ConfigureAwait(false).GetAwaiter().GetResult();
-        }
-
-        bool IRemotableQuartzScheduler.IsJobGroupPaused(string groupName)
-        {
-            return IsJobGroupPaused(groupName).ConfigureAwait(false).GetAwaiter().GetResult();
-        }
-
-        bool IRemotableQuartzScheduler.IsTriggerGroupPaused(string groupName)
-        {
-            return IsTriggerGroupPaused(groupName).ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
         bool IRemotableQuartzScheduler.DeleteJob(JobKey jobKey)

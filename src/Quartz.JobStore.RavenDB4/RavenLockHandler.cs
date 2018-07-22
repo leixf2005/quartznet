@@ -8,10 +8,10 @@ using Quartz.Logging;
 
 namespace Quartz.Impl.RavenDB
 {
-    public class RavenLockHandler : IRavenLockHandler
+    internal class RavenLockHandler : IRavenLockHandler
     {
         private readonly object syncRoot = new object();
-        private readonly Dictionary<Guid, HashSet<string>> locks = new Dictionary<Guid, HashSet<string>>();
+        private readonly Dictionary<Guid, HashSet<LockType>> locks = new Dictionary<Guid, HashSet<LockType>>();
 
         private string schedulerName;
 
@@ -30,37 +30,37 @@ namespace Quartz.Impl.RavenDB
         public async Task<bool> ObtainLock(
             Guid requestorId,
             RavenConnection connection,
-            string lockName,
+            LockType lockType,
             CancellationToken cancellationToken = default)
         {
             if (Log.IsDebugEnabled())
             {
-                Log.DebugFormat("Lock '{0}' is desired by: {1}", lockName, requestorId);
+                Log.DebugFormat("Lock '{0}' is desired by: {1}", lockType, requestorId);
             }
 
-            if (!IsLockOwner(requestorId, lockName))
+            if (!IsLockOwner(requestorId, lockType))
             {
-                await Execute(requestorId, connection, lockName, cancellationToken).ConfigureAwait(false);
+                await Execute(requestorId, connection, lockType, cancellationToken).ConfigureAwait(false);
 
                 if (Log.IsDebugEnabled())
                 {
-                    Log.DebugFormat("Lock '{0}' given to: {1}", lockName, requestorId);
+                    Log.DebugFormat("Lock '{0}' given to: {1}", lockType, requestorId);
                 }
 
                 lock (syncRoot)
                 {
                     if (!locks.TryGetValue(requestorId, out var requestorLocks))
                     {
-                        requestorLocks = new HashSet<string>();
+                        requestorLocks = new HashSet<LockType>();
                         locks[requestorId] = requestorLocks;
                     }
 
-                    requestorLocks.Add(lockName);
+                    requestorLocks.Add(lockType);
                 }
             }
             else if (Log.IsDebugEnabled())
             {
-                Log.DebugFormat("Lock '{0}' Is already owned by: {1}", lockName, requestorId);
+                Log.DebugFormat("Lock '{0}' Is already owned by: {1}", lockType, requestorId);
             }
 
             return true;
@@ -68,16 +68,16 @@ namespace Quartz.Impl.RavenDB
 
         public Task ReleaseLock(
             Guid requestorId,
-            string lockName,
+            LockType lockType,
             CancellationToken cancellationToken = default)
         {
-            if (IsLockOwner(requestorId, lockName))
+            if (IsLockOwner(requestorId, lockType))
             {
                 lock (syncRoot)
                 {
                     if (locks.TryGetValue(requestorId, out var requestorLocks))
                     {
-                        requestorLocks.Remove(lockName);
+                        requestorLocks.Remove(lockType);
                         if (requestorLocks.Count == 0)
                         {
                             locks.Remove(requestorId);
@@ -87,13 +87,15 @@ namespace Quartz.Impl.RavenDB
 
                 if (Log.IsDebugEnabled())
                 {
-                    Log.DebugFormat("Lock '{0}' returned by: {1}", lockName, requestorId);
+                    Log.DebugFormat("Lock '{0}' returned by: {1}", lockType, requestorId);
                 }
             }
-            else if (Log.IsWarnEnabled())
+            else
             {
-                Log.WarnException($"Lock '{lockName}' attempt to return by: {requestorId} -- but not owner!",
+                if (Log.IsWarnEnabled()){
+                    Log.WarnException($"Lock '{lockType}' attempt to return by: {requestorId} -- but not owner!",
                     new Exception("stack-trace of wrongful returner"));
+                }
             }
 
             return TaskUtil.CompletedTask;
@@ -103,18 +105,18 @@ namespace Quartz.Impl.RavenDB
         /// Determine whether the calling thread owns a lock on the identified
         /// resource.
         /// </summary>
-        private bool IsLockOwner(Guid requestorId, string lockName)
+        private bool IsLockOwner(Guid requestorId, LockType lockType)
         {
             lock (syncRoot)
             {
-                return locks.TryGetValue(requestorId, out var requestorLocks) && requestorLocks.Contains(lockName);
+                return locks.TryGetValue(requestorId, out var requestorLocks) && requestorLocks.Contains(lockType);
             }
         }
 
         private async Task Execute(
             Guid requestorId, 
             RavenConnection connection,
-            string lockName,
+            LockType lockType,
             CancellationToken cancellationToken)
         {
             Exception initCause = null;
@@ -134,7 +136,7 @@ namespace Quartz.Impl.RavenDB
                         {
                             if (Log.IsDebugEnabled())
                             {
-                                Log.DebugFormat("Lock '{0}' is being obtained: {1}", lockName, requestorId);
+                                Log.DebugFormat("Lock '{0}' is being obtained: {1}", lockType, requestorId);
                             }
 
                             found = false;  //TODO await rs.ReadAsync(cancellationToken).ConfigureAwait(false);
@@ -144,7 +146,7 @@ namespace Quartz.Impl.RavenDB
                         {
                             if (Log.IsDebugEnabled())
                             {
-                                Log.DebugFormat("Inserting new lock row for lock: '{0}' being obtained by thread: {1}", lockName, requestorId);
+                                Log.DebugFormat("Inserting new lock row for lock: '{0}' being obtained by thread: {1}", lockType, requestorId);
                             }
 
                             //using (DbCommand cmd2 = AdoUtil.PrepareCommand(conn, expandedInsertSql))
@@ -163,7 +165,7 @@ namespace Quartz.Impl.RavenDB
                                         // try again ...
                                         continue;
                                     }
-                                    throw new Exception("No document exists, and one could not be inserted for lock named: " + lockName);
+                                    throw new Exception("No document exists, and one could not be inserted for lock named: " + lockType);
                                 }
                             }
                         }
@@ -181,7 +183,7 @@ namespace Quartz.Impl.RavenDB
 
                     if (Log.IsDebugEnabled())
                     {
-                        Log.DebugFormat("Lock '{0}' was not obtained by: {1}{2}", lockName, requestorId, count < 3 ? " - will try again." : "");
+                        Log.DebugFormat("Lock '{0}' was not obtained by: {1}{2}", lockType, requestorId, count < 3 ? " - will try again." : "");
                     }
 
                     if (count < 3)

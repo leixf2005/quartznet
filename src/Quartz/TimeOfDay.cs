@@ -21,6 +21,8 @@
 
 using System;
 
+// ReSharper disable AutoPropertyCanBeMadeGetOnly.Local
+
 namespace Quartz
 {
     /// <summary>
@@ -116,17 +118,17 @@ namespace Quartz
         /// <summary>
         /// The hour of the day (between 0 and 23).
         /// </summary>
-        public int Hour { get; }
+        public int Hour { get; private set; }
 
         /// <summary>
         /// The minute of the hour (between 0 and 59).
         /// </summary>
-        public int Minute { get; }
+        public int Minute { get; private set; }
 
         /// <summary>
         /// The second of the minute (between 0 and 59).
         /// </summary>
-        public int Second { get; }
+        public int Second { get; private set; }
 
         /// <summary>
         /// Determine with this time of day is before the given time of day.

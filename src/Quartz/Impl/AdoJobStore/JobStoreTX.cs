@@ -41,10 +41,10 @@ namespace Quartz.Impl.AdoJobStore
         /// </summary>
         public override Task Initialize(
             ITypeLoadHelper loadHelper, 
-            ISchedulerSignaler signaler,
+            ISchedulerSignaler schedulerSignaler,
             CancellationToken cancellationToken = default)
         {
-            base.Initialize(loadHelper, signaler, cancellationToken);
+            base.Initialize(loadHelper, schedulerSignaler, cancellationToken);
             Log.Info("JobStoreTX initialized.");
             return TaskUtil.CompletedTask;
         }

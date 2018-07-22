@@ -11,7 +11,7 @@ namespace Quartz.Impl.RavenDB
             Map = jobs => from job in jobs
                 select new
                 {
-                    job.Key,
+                    job.Name, 
                     job.Group, 
                     job.RequestsRecovery, 
                     job.Scheduler

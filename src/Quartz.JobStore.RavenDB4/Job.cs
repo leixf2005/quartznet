@@ -5,9 +5,9 @@ namespace Quartz.Impl.RavenDB
 {
     internal class Job
     {
+        public string Id { get; set; }
         public string Name { get; set; }
         public string Group { get; set; }
-        public string Key { get; set; }
         public string Scheduler { get; set; }
 
         public string Description { get; set; }
@@ -20,10 +20,16 @@ namespace Quartz.Impl.RavenDB
 
         public Job(IJobDetail newJob, string schedulerInstanceName)
         {
-            if (newJob == null) return;
+            if (newJob == null)
+            {
+                return;
+            }
+
+            newJob.Key.Validate();
+            
+            Id = newJob.Key.DocumentId(schedulerInstanceName);
             Name = newJob.Key.Name;
             Group = newJob.Key.Group;
-            Key = Name + "/" + Group;
             Scheduler = schedulerInstanceName;
 
             Description = newJob.Description;
