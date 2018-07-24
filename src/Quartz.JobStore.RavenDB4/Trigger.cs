@@ -10,72 +10,6 @@ namespace Quartz.Impl.RavenDB
 {
     internal class Trigger : IHasGroup
     {
-        public string Id { get; private set; }
-        public string Name { get; private set; }
-        public string Group { get; private set; }
-
-        public string JobName { get; private set; }
-        public string JobKey { get; private set; }
-        public string Scheduler { get; private set; }
-
-        public InternalTriggerState State { get; internal set; }
-        public string Description { get; private set; }
-        public string CalendarName { get; private set; }
-        public IDictionary<string, object> JobDataMap { get; private set; }
-        public string FireInstanceId { get; set; }
-        public int MisfireInstruction { get; private set; }
-        public DateTimeOffset? FinalFireTimeUtc { get; private set; }
-        public DateTimeOffset? EndTimeUtc { get; private set; }
-        public DateTimeOffset StartTimeUtc { get; private set; }
-
-        public DateTimeOffset? NextFireTimeUtc { get; set; }
-
-        // Used for sorting triggers by time - more efficient than sorting strings
-        public long NextFireTimeTicks { get; set; }
-
-        public DateTimeOffset? PreviousFireTimeUtc { get; set; }
-        public int Priority { get; set; }
-        public bool HasMillisecondPrecision { get; set; }
-
-        public CronOptions Cron { get; private set; }
-        public SimpleOptions Simp { get; private set; }
-        public CalendarOptions Cal { get; private set; }
-        public DailyTimeOptions Day { get; private set; }
-
-        public class CronOptions
-        {
-            public string CronExpression { get; set; }
-            public string TimeZoneId { get; set; }
-        }
-
-        public class SimpleOptions
-        {
-            public int RepeatCount { get; set; }
-            public TimeSpan RepeatInterval { get; set; }
-        }
-
-        public class CalendarOptions
-        {
-            public IntervalUnit RepeatIntervalUnit { get; set; }
-            public int RepeatInterval { get; set; }
-            public int TimesTriggered { get; set; }
-            public string TimeZoneId { get; set; }
-            public bool PreserveHourOfDayAcrossDaylightSavings { get; set; }
-            public bool SkipDayIfHourDoesNotExist { get; set; }
-        }
-
-        public class DailyTimeOptions
-        {
-            public int RepeatCount { get; set; }
-            public IntervalUnit RepeatIntervalUnit { get; set; }
-            public int RepeatInterval { get; set; }
-            public TimeOfDay StartTimeOfDay { get; set; }
-            public TimeOfDay EndTimeOfDay { get; set; }
-            public HashSet<DayOfWeek> DaysOfWeek { get; set; }
-            public int TimesTriggered { get; set; }
-            public string TimeZoneId { get; set; }
-        }
-
         public Trigger(
             IOperableTrigger newTrigger,
             string schedulerInstanceName)
@@ -89,12 +23,13 @@ namespace Quartz.Impl.RavenDB
             newTrigger.JobKey.Validate();
 
             Id = newTrigger.Key.DocumentId(schedulerInstanceName);
+
+            Scheduler = schedulerInstanceName;
+
             Name = newTrigger.Key.Name;
             Group = newTrigger.Key.Group;
 
-            JobName = newTrigger.JobKey.Name;
-            JobKey = newTrigger.JobKey.DocumentId(schedulerInstanceName);
-            Scheduler = schedulerInstanceName;
+            JobId = newTrigger.JobKey.DocumentId(schedulerInstanceName);
 
             State = InternalTriggerState.Waiting;
             Description = newTrigger.Description;
@@ -158,6 +93,88 @@ namespace Quartz.Impl.RavenDB
             }
         }
 
+        public string Id { get; private set; }
+
+        public string Name { get; private set; }
+
+        public string Group { get; private set; }
+
+        public string JobId { get; private set; }
+
+        public string Scheduler { get; private set; }
+
+        public InternalTriggerState State { get; internal set; }
+
+        public string Description { get; private set; }
+
+        public string CalendarName { get; private set; }
+
+        public IDictionary<string, object> JobDataMap { get; private set; }
+
+        public string FireInstanceId { get; set; }
+
+        public int MisfireInstruction { get; private set; }
+
+        public DateTimeOffset? FinalFireTimeUtc { get; private set; }
+
+        public DateTimeOffset? EndTimeUtc { get; private set; }
+
+        public DateTimeOffset StartTimeUtc { get; private set; }
+
+        public DateTimeOffset? NextFireTimeUtc { get; set; }
+
+        // Used for sorting triggers by time - more efficient than sorting strings
+
+        public long NextFireTimeTicks { get; set; }
+
+        public DateTimeOffset? PreviousFireTimeUtc { get; set; }
+
+        public int Priority { get; set; }
+
+        public bool HasMillisecondPrecision { get; set; }
+
+        public CronOptions Cron { get; private set; }
+
+        public SimpleOptions Simp { get; private set; }
+
+        public CalendarOptions Cal { get; private set; }
+
+        public DailyTimeOptions Day { get; private set; }
+
+        public class CronOptions
+        {
+            public string CronExpression { get; set; }
+            public string TimeZoneId { get; set; }
+        }
+
+        public class SimpleOptions
+        {
+            public int RepeatCount { get; set; }
+            public TimeSpan RepeatInterval { get; set; }
+        }
+
+        public class CalendarOptions
+        {
+            public IntervalUnit RepeatIntervalUnit { get; set; }
+            public int RepeatInterval { get; set; }
+            public int TimesTriggered { get; set; }
+            public string TimeZoneId { get; set; }
+            public bool PreserveHourOfDayAcrossDaylightSavings { get; set; }
+            public bool SkipDayIfHourDoesNotExist { get; set; }
+        }
+
+        public class DailyTimeOptions
+        {
+            public int RepeatCount { get; set; }
+            public IntervalUnit RepeatIntervalUnit { get; set; }
+            public int RepeatInterval { get; set; }
+            public TimeOfDay StartTimeOfDay { get; set; }
+            public TimeOfDay EndTimeOfDay { get; set; }
+            public HashSet<DayOfWeek> DaysOfWeek { get; set; }
+            public int TimesTriggered { get; set; }
+            public string TimeZoneId { get; set; }
+        }
+
         public IOperableTrigger Deserialize()
         {
             var triggerBuilder = TriggerBuilder.Create()
@@ -167,7 +184,7 @@ namespace Quartz.Impl.RavenDB
                 .WithPriority(Priority)
                 .StartAt(StartTimeUtc)
                 .EndAt(EndTimeUtc)
-                .ForJob(new JobKey(JobName, Group))
+                .ForJob(JobId.JobKeyFromDocumentId())
                 .UsingJobData(new JobDataMap(JobDataMap));
 
             if (Cron != null)

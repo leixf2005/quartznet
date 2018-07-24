@@ -13,7 +13,7 @@ namespace Quartz.Impl.RavenDB
                 {
                     trigger.Name,
                     trigger.Group,
-                    trigger.JobName,
+                    trigger.JobId,
                     trigger.MisfireInstruction,
                     trigger.NextFireTimeTicks,
                     trigger.NextFireTimeUtc,

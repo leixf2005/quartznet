@@ -239,10 +239,10 @@ namespace Quartz.Spi
         /// </summary>
         /// <remarks>
         /// </remarks>
-        /// <param name="calName">the identifier to check for</param>
+        /// <param name="calendarName">the identifier to check for</param>
         /// <param name="cancellationToken">The cancellation instruction.</param>
         /// <returns>true if a calendar exists with the given identifier</returns>
-        Task<bool> CalendarExists(string calName, CancellationToken cancellationToken = default);
+        Task<bool> CalendarExists(string calendarName, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Determine whether a <see cref="IJob" /> with the given identifier already
@@ -298,27 +298,27 @@ namespace Quartz.Spi
         /// <see cref="ITrigger" />s pointing to non-existent calendars, then a
         /// <see cref="JobPersistenceException" /> will be thrown.
         /// </remarks>
-        /// <param name="calName">The name of the <see cref="ICalendar" /> to be removed.</param>
+        /// <param name="calendarName">The name of the <see cref="ICalendar" /> to be removed.</param>
         /// <param name="cancellationToken">The cancellation instruction.</param>
         /// <returns>
         /// 	<see langword="true" /> if a <see cref="ICalendar" /> with the given name
         /// was found and removed from the store.
         /// </returns>
         Task<bool> RemoveCalendar(
-            string calName,
+            string calendarName,
             CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Retrieve the given <see cref="ITrigger" />.
         /// </summary>
-        /// <param name="calName">The name of the <see cref="ICalendar" /> to be retrieved.</param>
+        /// <param name="calendarName">The name of the <see cref="ICalendar" /> to be retrieved.</param>
         /// <param name="cancellationToken">The cancellation instruction.</param>
         /// <returns>
         /// The desired <see cref="ICalendar" />, or null if there is no
         /// match.
         /// </returns>
         Task<ICalendar> RetrieveCalendar(
-            string calName, 
+            string calendarName, 
             CancellationToken cancellationToken = default);
 
         /// <summary>

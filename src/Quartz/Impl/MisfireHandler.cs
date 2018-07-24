@@ -6,7 +6,7 @@ using Quartz.Logging;
 using Quartz.Spi;
 using Quartz.Util;
 
-namespace Quartz.Impl.AdoJobStore
+namespace Quartz.Impl
 {
     internal class MisfireHandler
     {

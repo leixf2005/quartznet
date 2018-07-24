@@ -7,11 +7,10 @@ using Raven.Client.Documents.Session;
 
 namespace Quartz.Impl.RavenDB
 {
-    internal class RavenConnection : IDisposable
+    public class RavenConnection : UnitOfWorkConnection, IDisposable
     {
         private IAsyncDocumentSession session;
         private readonly string schedulerName;
-        private DateTimeOffset? sigChangeForTxCompletion;
 
         public RavenConnection(IAsyncDocumentSession session, string schedulerName)
         {
@@ -19,82 +18,82 @@ namespace Quartz.Impl.RavenDB
             this.schedulerName = schedulerName;
         }
 
-        internal virtual DateTimeOffset? SignalSchedulingChangeOnTxCompletion
-        {
-            get => sigChangeForTxCompletion;
-            set
-            {
-                DateTimeOffset? sigTime = sigChangeForTxCompletion;
-                if (sigChangeForTxCompletion == null && value.HasValue)
-                {
-                    sigChangeForTxCompletion = value;
-                }
-                else
-                {
-                    if (sigChangeForTxCompletion == null || value < sigTime)
-                    {
-                        sigChangeForTxCompletion = value;
-                    }
-                }
-            }
-        }
-
-        public Task Commit(CancellationToken cancellationToken)
+        internal Task Commit(CancellationToken cancellationToken)
         {
             return session.SaveChangesAsync(cancellationToken);
         }
 
-        public void Rollback()
+        internal void Rollback()
         {
             session?.Dispose();
             session = null;
         }
 
-        public IRavenQueryable<Trigger> QueryTriggers()
+        internal IRavenQueryable<Trigger> QueryTriggers()
         {
             return session.Query<Trigger, TriggerIndex>()
                 .Where(x => x.Scheduler == schedulerName);
         }
+        
+        internal IRavenQueryable<Trigger> QueryTrigger(TriggerKey triggerKey)
+        {
+            return session.Query<Trigger, TriggerIndex>()
+                .Where(x => x.Id == triggerKey.DocumentId(schedulerName));
+        }
 
-        public IRavenQueryable<Job> QueryJobs()
+        internal IRavenQueryable<Job> QueryJobs()
         {
             return session.Query<Job, JobIndex>()
                 .Where(x => x.Scheduler == schedulerName);
         }
-        public IRavenQueryable<FiredTrigger> QueryFiredTriggers()
+
+        internal IRavenQueryable<FiredTrigger> QueryFiredTriggers()
         {
             return session.Query<FiredTrigger, FiredTriggerIndex>()
                 .Where(x => x.Scheduler == schedulerName);
         }
 
-        public Task<Scheduler> LoadScheduler(CancellationToken cancellationToken)
+        internal Task<Scheduler> LoadScheduler(CancellationToken cancellationToken)
         {
             return session.LoadAsync<Scheduler>(schedulerName, cancellationToken);
         }
 
-        public Task<Trigger> LoadTrigger(TriggerKey triggerKey, CancellationToken cancellationToken)
+        internal Task<Trigger> LoadTrigger(TriggerKey triggerKey, CancellationToken cancellationToken)
         {
             return session.LoadAsync<Trigger>(triggerKey.DocumentId(schedulerName), cancellationToken);
         }
 
-        public Task<Job> LoadJob(JobKey jobKey, CancellationToken cancellationToken)
+        internal Task<Job> LoadJob(JobKey jobKey, CancellationToken cancellationToken)
         {
             return session.LoadAsync<Job>(jobKey.DocumentId(schedulerName), cancellationToken);
         }
 
-        public Task<bool> ExistsAsync(string id)
+        internal Task<Job> LoadJob(string id, CancellationToken cancellationToken)
         {
-            return session.Advanced.ExistsAsync(id);
+            return session.LoadAsync<Job>(id, cancellationToken);
         }
 
-        public Task StoreAsync(object entity, string id, CancellationToken cancellationToken)
+        internal async Task<bool> ExistsAsync(string id)
+        {
+            // TODO wait for fix http://issues.hibernatingrhinos.com/issue/RavenDB-11626
+            
+            //return session.Advanced.ExistsAsync(id);
+            return await session.LoadAsync<object>(id).ConfigureAwait(false) != null;
+        }
+
+        internal Task StoreAsync(object entity, string id, CancellationToken cancellationToken)
         {
             return session.StoreAsync(entity, id, cancellationToken);
         }
 
-        public void Delete(object entity)
+        internal void Delete(object entity)
         {
             session.Delete(entity);
+        }
+
+        internal void Delete(string id)
+        {
+            session.Delete(id);
         }
 
         public void Dispose()

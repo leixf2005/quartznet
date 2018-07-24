@@ -12,10 +12,8 @@ namespace Quartz.Impl.RavenDB
                 select new
                 {
                     trigger.Scheduler,
-                    trigger.TriggerName,
-                    trigger.TriggerGroup,
-                    trigger.JobName,
-                    trigger.JobGroup,
+                    trigger.TriggerId,
+                    trigger.JobId,
                     trigger.Priority,
                     trigger.State,
                 };

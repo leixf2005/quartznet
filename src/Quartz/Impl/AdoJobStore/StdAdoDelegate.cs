@@ -1,3 +1,4 @@
+
 #region License
 
 /*
@@ -36,6 +37,7 @@ using Quartz.Impl.AdoJobStore.Common;
 using Quartz.Impl.Matchers;
 using Quartz.Impl.Triggers;
 using Quartz.Logging;
+using Quartz.Simpl;
 using Quartz.Spi;
 using Quartz.Util;
 
@@ -291,20 +293,7 @@ namespace Quartz.Impl.AdoJobStore
             }
         }
 
-        /// <summary>
-        /// Get the names of all of the triggers in the given state that have
-        /// misfired - according to the given timestamp.  No more than count will
-        /// be returned.
-        /// </summary>
-        /// <param name="conn">The conn.</param>
-        /// <param name="state1">The state1.</param>
-        /// <param name="ts">The ts.</param>
-        /// <param name="count">The most misfired triggers to return, negative for all</param>
-        /// <param name="resultList">
-        ///   Output parameter.  A List of <see cref="TriggerKey" /> objects.  Must not be null
-        /// </param>
-        /// <param name="cancellationToken">The cancellation instruction.</param>
-        /// <returns>Whether there are more misfired triggers left to find beyond the given count.</returns>
+        /// <inheritdoc />
         public virtual async Task<bool> HasMisfiredTriggersInState(
             ConnectionAndTransactionHolder conn,
             string state1,
@@ -323,12 +312,12 @@ namespace Quartz.Impl.AdoJobStore
                 DbDataReader rs;
                 using (rs = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    bool hasReachedLimit = false;
-                    while (await rs.ReadAsync(cancellationToken).ConfigureAwait(false) && !hasReachedLimit)
+                    bool hasMoreTriggersInStateThanRequested = false;
+                    while (await rs.ReadAsync(cancellationToken).ConfigureAwait(false) && !hasMoreTriggersInStateThanRequested)
                     {
                         if (resultList.Count == count)
                         {
-                            hasReachedLimit = true;
+                            hasMoreTriggersInStateThanRequested = true;
                         }
                         else
                         {
@@ -337,7 +326,7 @@ namespace Quartz.Impl.AdoJobStore
                             resultList.Add(new TriggerKey(triggerName, groupName));
                         }
                     }
-                    return hasReachedLimit;
+                    return hasMoreTriggersInStateThanRequested;
                 }
             }
         }
@@ -1999,9 +1988,11 @@ namespace Quartz.Impl.AdoJobStore
 
                         DateTimeOffset? nft = GetDateTimeFromDbValue(nextFireTime);
 
-                        status = new TriggerStatus(state, nft);
-                        status.Key = triggerKey;
-                        status.JobKey = new JobKey(jobName, jobGroup);
+                        status = new TriggerStatus(
+                            triggerKey, 
+                            new JobKey(jobName, jobGroup),
+                            GetStateFromString(state), 
+                            nft);
                     }
                 }
                 return status;
@@ -2656,9 +2647,6 @@ namespace Quartz.Impl.AdoJobStore
             CancellationToken cancellationToken = default)
         {
             DbCommand cmd;
-
-            List<FiredTriggerRecord> lst = new List<FiredTriggerRecord>();
-
             if (triggerName != null)
             {
                 cmd = PrepareCommand(conn, ReplaceTablePrefix(SqlSelectFiredTrigger));
@@ -2671,25 +2659,12 @@ namespace Quartz.Impl.AdoJobStore
                 AddCommandParameter(cmd, "triggerGroup", groupName);
             }
 
+            var lst = new List<FiredTriggerRecord>();
             using (var rs = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
             {
                 while (await rs.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    FiredTriggerRecord rec = new FiredTriggerRecord();
-
-                    rec.FireInstanceId = rs.GetString(ColumnEntryId);
-                    rec.FireInstanceState = rs.GetString(ColumnEntryState);
-                    rec.FireTimestamp = GetDateTimeFromDbValue(rs[ColumnFiredTime]) ?? DateTimeOffset.MinValue;
-                    rec.ScheduleTimestamp = GetDateTimeFromDbValue(rs[ColumnScheduledTime]) ?? DateTimeOffset.MinValue;
-                    rec.Priority = Convert.ToInt32(rs[ColumnPriority], CultureInfo.InvariantCulture);
-                    rec.SchedulerInstanceId = rs.GetString(ColumnInstanceName);
-                    rec.TriggerKey = new TriggerKey(rs.GetString(ColumnTriggerName), rs.GetString(ColumnTriggerGroup));
-                    if (!rec.FireInstanceState.Equals(StateAcquired))
-                    {
-                        rec.JobDisallowsConcurrentExecution = GetBooleanFromDbValue(rs[ColumnIsNonConcurrent]);
-                        rec.JobRequestsRecovery = GetBooleanFromDbValue(rs[ColumnRequestsRecovery]);
-                        rec.JobKey = new JobKey(rs.GetString(ColumnJobName), rs.GetString(ColumnJobGroup));
-                    }
+                    var rec = ReadFiredTriggerRecord(rs);
                     lst.Add(rec);
                 }
             }
@@ -2711,8 +2686,6 @@ namespace Quartz.Impl.AdoJobStore
             string groupName,
             CancellationToken cancellationToken = default)
         {
-            List<FiredTriggerRecord> lst = new List<FiredTriggerRecord>();
-
             DbCommand cmd;
             if (jobName != null)
             {
@@ -2726,25 +2699,12 @@ namespace Quartz.Impl.AdoJobStore
                 AddCommandParameter(cmd, "jobGroup", groupName);
             }
 
+            var lst = new List<FiredTriggerRecord>();
             using (var rs = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
             {
                 while (await rs.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    FiredTriggerRecord rec = new FiredTriggerRecord();
-
-                    rec.FireInstanceId = rs.GetString(ColumnEntryId);
-                    rec.FireInstanceState = rs.GetString(ColumnEntryState);
-                    rec.FireTimestamp = GetDateTimeFromDbValue(rs[ColumnFiredTime]) ?? DateTimeOffset.MinValue;
-                    rec.ScheduleTimestamp = GetDateTimeFromDbValue(rs[ColumnScheduledTime]) ?? DateTimeOffset.MinValue;
-                    rec.Priority = Convert.ToInt32(rs[ColumnPriority], CultureInfo.InvariantCulture);
-                    rec.SchedulerInstanceId = rs.GetString(ColumnInstanceName);
-                    rec.TriggerKey = new TriggerKey(rs.GetString(ColumnTriggerName), rs.GetString(ColumnTriggerGroup));
-                    if (!rec.FireInstanceState.Equals(StateAcquired))
-                    {
-                        rec.JobDisallowsConcurrentExecution = GetBooleanFromDbValue(rs[ColumnIsNonConcurrent]);
-                        rec.JobRequestsRecovery = GetBooleanFromDbValue(rs[ColumnRequestsRecovery]);
-                        rec.JobKey = new JobKey(rs.GetString(ColumnJobName), rs.GetString(ColumnJobGroup));
-                    }
+                    var rec = ReadFiredTriggerRecord(rs);
                     lst.Add(rec);
                 }
             }
@@ -2765,7 +2725,6 @@ namespace Quartz.Impl.AdoJobStore
             CancellationToken cancellationToken = default)
         {
             List<FiredTriggerRecord> lst = new List<FiredTriggerRecord>();
-
             using (var cmd = PrepareCommand(conn, ReplaceTablePrefix(SqlSelectInstancesFiredTriggers)))
             {
                 AddCommandParameter(cmd, "instanceName", instanceName);
@@ -2773,26 +2732,36 @@ namespace Quartz.Impl.AdoJobStore
                 {
                     while (await rs.ReadAsync(cancellationToken).ConfigureAwait(false))
                     {
-                        FiredTriggerRecord rec = new FiredTriggerRecord();
-
-                        rec.FireInstanceId = rs.GetString(ColumnEntryId);
-                        rec.FireInstanceState = rs.GetString(ColumnEntryState);
-                        rec.FireTimestamp = GetDateTimeFromDbValue(rs[ColumnFiredTime]) ?? DateTimeOffset.MinValue;
-                        rec.ScheduleTimestamp = GetDateTimeFromDbValue(rs[ColumnScheduledTime]) ?? DateTimeOffset.MinValue;
-                        rec.SchedulerInstanceId = rs.GetString(ColumnInstanceName);
-                        rec.TriggerKey = new TriggerKey(rs.GetString(ColumnTriggerName), rs.GetString(ColumnTriggerGroup));
-                        if (!rec.FireInstanceState.Equals(StateAcquired))
-                        {
-                            rec.JobDisallowsConcurrentExecution = GetBooleanFromDbValue(rs[ColumnIsNonConcurrent]);
-                            rec.JobRequestsRecovery = GetBooleanFromDbValue(rs[ColumnRequestsRecovery]);
-                            rec.JobKey = new JobKey(rs.GetString(ColumnJobName), rs.GetString(ColumnJobGroup));
-                        }
+                        var rec = ReadFiredTriggerRecord(rs);
                         lst.Add(rec);
                     }
                 }
 
                 return lst;
             }
+        }
+
+        private FiredTriggerRecord ReadFiredTriggerRecord(DbDataReader rs)
+        {
+            var rec = new FiredTriggerRecord
+            {
+                FireInstanceId = rs.GetString(ColumnEntryId),
+                FireInstanceState = GetStateFromString(rs.GetString(ColumnEntryState)),
+                FireTimestamp = GetDateTimeFromDbValue(rs[ColumnFiredTime]) ?? DateTimeOffset.MinValue,
+                ScheduleTimestamp = GetDateTimeFromDbValue(rs[ColumnScheduledTime]) ?? DateTimeOffset.MinValue,
+                Priority = Convert.ToInt32(rs[ColumnPriority], CultureInfo.InvariantCulture),
+                SchedulerInstanceName = rs.GetString(ColumnInstanceName),
+                TriggerKey = new TriggerKey(rs.GetString(ColumnTriggerName), rs.GetString(ColumnTriggerGroup))
+            };
+
+            if (rec.FireInstanceState != InternalTriggerState.Acquired)
+            {
+                rec.JobDisallowsConcurrentExecution = GetBooleanFromDbValue(rs[ColumnIsNonConcurrent]);
+                rec.JobRequestsRecovery = GetBooleanFromDbValue(rs[ColumnRequestsRecovery]);
+                rec.JobKey = new JobKey(rs.GetString(ColumnJobName), rs.GetString(ColumnJobGroup));
+            }
+
+            return rec;
         }
 
         /// <summary>
@@ -3231,6 +3200,31 @@ namespace Quartz.Impl.AdoJobStore
             int? size = null)
         {
             adoUtil.AddCommandParameter(cmd, paramName, paramValue, dataType, size);
+        }
+        
+        private static InternalTriggerState GetStateFromString(string state)
+        {
+            switch (state)
+            {
+                case StateAcquired:
+                    return InternalTriggerState.Acquired;
+                case StateBlocked:
+                    return InternalTriggerState.Blocked;
+                case StateComplete:
+                    return InternalTriggerState.Complete;
+                case StateError:
+                    return InternalTriggerState.Error;
+                case StateExecuting:
+                    return InternalTriggerState.Executing;
+                case StatePaused:
+                    return InternalTriggerState.Paused;
+                case StatePausedBlocked:
+                    return InternalTriggerState.PausedAndBlocked;
+                case StateWaiting:
+                    return InternalTriggerState.Waiting;
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
         }
     }
 }

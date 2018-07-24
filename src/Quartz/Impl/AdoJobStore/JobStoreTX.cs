@@ -65,7 +65,7 @@ namespace Quartz.Impl.AdoJobStore
         /// and only has the one datasource, this is the same behavior as 
         /// <see cref="JobStoreSupport.ExecuteInNonManagedTXLock" />.
         /// </summary>
-        /// <param name="lockName">
+        /// <param name="lockType">
         /// The name of the lock to acquire, for example "TRIGGER_ACCESS". 
         /// If null, then no lock is acquired, but the lockCallback is still
         /// executed in a transaction.
@@ -77,11 +77,11 @@ namespace Quartz.Impl.AdoJobStore
         /// <seealso cref="JobStoreSupport.GetNonManagedTXConnection()" />
         /// <seealso cref="JobStoreSupport.GetConnection()" />
         protected override Task<T> ExecuteInLock<T>(
-            string lockName, 
+            LockType lockType, 
             Func<ConnectionAndTransactionHolder, Task<T>> txCallback,
             CancellationToken cancellationToken = default)
         {
-            return ExecuteInNonManagedTXLock(lockName, txCallback, cancellationToken);
+            return ExecuteInNonManagedTXLock(lockType, txCallback, cancellationToken);
         }
     }
 }

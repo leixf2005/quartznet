@@ -31,11 +31,9 @@ namespace Quartz.Impl.AdoJobStore
     /// Unit of work for AdoJobStore operations.
     /// </summary>
     /// <author>Marko Lahma</author>
-    public class ConnectionAndTransactionHolder : IDisposable
+    public class ConnectionAndTransactionHolder : UnitOfWorkConnection, IDisposable
     {
         private static readonly ILog log = LogProvider.GetLogger(typeof(ConnectionAndTransactionHolder));
-
-        private DateTimeOffset? sigChangeForTxCompletion;
 
         private readonly DbConnection connection;
         private DbTransaction transaction;
@@ -113,26 +111,6 @@ namespace Quartz.Impl.AdoJobStore
             catch
             {
                 // ignored
-            }
-        }
-
-        internal virtual DateTimeOffset? SignalSchedulingChangeOnTxCompletion
-        {
-            get => sigChangeForTxCompletion;
-            set
-            {
-                DateTimeOffset? sigTime = sigChangeForTxCompletion;
-                if (sigChangeForTxCompletion == null && value.HasValue)
-                {
-                    sigChangeForTxCompletion = value;
-                }
-                else
-                {
-                    if (sigChangeForTxCompletion == null || value < sigTime)
-                    {
-                        sigChangeForTxCompletion = value;
-                    }
-                }
             }
         }
 

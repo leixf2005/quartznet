@@ -10,6 +10,7 @@ namespace Quartz.Impl.RavenDB
     internal static class RavenExtensions
     {
         private const char DocumentIdPartSeparator = '/';
+        private static  readonly char[] DocumentIdPartSeparatorArray = new [] {DocumentIdPartSeparator};
 
         internal static void Validate<T>(this Key<T> key)
         {
@@ -21,6 +22,18 @@ namespace Quartz.Impl.RavenDB
         
         internal static string DocumentId<T>(this Key<T> key, string schedulerName) 
             => schedulerName + DocumentIdPartSeparator + key.Group + DocumentIdPartSeparator + key.Name;
+
+        internal static JobKey JobKeyFromDocumentId(this string id)
+        {
+            var parts = id.Split(DocumentIdPartSeparatorArray);
+            return new JobKey(parts[2], parts[1]);
+        }
+        
+        internal static TriggerKey TriggerIdFromDocumentId(this string id)
+        {
+            var parts = id.Split(DocumentIdPartSeparatorArray);
+            return new TriggerKey(parts[2], parts[1]);
+        }
 
         internal static IRavenQueryable<T> WhereMatches<T, TKey>(
             this IRavenQueryable<T> queryable,

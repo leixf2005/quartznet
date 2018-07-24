@@ -1,6 +1,6 @@
-namespace Quartz.Impl.RavenDB
+namespace Quartz.Impl
 {
-    internal enum LockType
+    public enum LockType
     {
         None,
         TriggerAccess,
