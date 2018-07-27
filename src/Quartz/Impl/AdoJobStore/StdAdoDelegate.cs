@@ -404,22 +404,7 @@ namespace Quartz.Impl.AdoJobStore
             }
         }
 
-        /// <summary>
-        /// Select all of the triggers for jobs that are requesting recovery. The
-        /// returned trigger objects will have unique "recoverXXX" trigger names and
-        /// will be in the <see cref="SchedulerConstants.DefaultRecoveryGroup" />
-        /// trigger group.
-        /// </summary>
-        /// <remarks>
-        /// In order to preserve the ordering of the triggers, the fire time will be
-        /// set from the <i>ColumnFiredTime</i> column in the <i>TableFiredTriggers</i>
-        /// table. The caller is responsible for calling <see cref="IOperableTrigger.ComputeFirstFireTimeUtc" />
-        /// on each returned trigger. It is also up to the caller to insert the
-        /// returned triggers to ensure that they are fired.
-        /// </remarks>
-        /// <param name="conn">The DB Connection</param>
-        /// <param name="cancellationToken">The cancellation instruction.</param>
-        /// <returns> an array of <see cref="ITrigger" /> objects</returns>
+        /// <inheritdoc />
         public virtual async Task<IReadOnlyCollection<IOperableTrigger>> SelectTriggersForRecoveringJobs(
             ConnectionAndTransactionHolder conn,
             CancellationToken cancellationToken = default)
@@ -3201,8 +3186,8 @@ namespace Quartz.Impl.AdoJobStore
         {
             adoUtil.AddCommandParameter(cmd, paramName, paramValue, dataType, size);
         }
-        
-        private static InternalTriggerState GetStateFromString(string state)
+
+        internal static InternalTriggerState GetStateFromString(string state)
         {
             switch (state)
             {

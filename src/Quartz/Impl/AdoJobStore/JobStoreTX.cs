@@ -79,7 +79,7 @@ namespace Quartz.Impl.AdoJobStore
         protected override Task<T> ExecuteInLock<T>(
             LockType lockType, 
             Func<ConnectionAndTransactionHolder, Task<T>> txCallback,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
             return ExecuteInNonManagedTXLock(lockType, txCallback, cancellationToken);
         }

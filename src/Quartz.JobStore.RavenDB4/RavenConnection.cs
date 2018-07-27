@@ -63,6 +63,11 @@ namespace Quartz.Impl.RavenDB
             return session.LoadAsync<Trigger>(triggerKey.DocumentId(schedulerName), cancellationToken);
         }
 
+        internal Task<FiredTrigger> LoadFiredTrigger(string entryId, CancellationToken cancellationToken)
+        {
+            return session.LoadAsync<FiredTrigger>(schedulerName + "/" + entryId, cancellationToken);
+        }
+
         internal Task<Job> LoadJob(JobKey jobKey, CancellationToken cancellationToken)
         {
             return session.LoadAsync<Job>(jobKey.DocumentId(schedulerName), cancellationToken);
