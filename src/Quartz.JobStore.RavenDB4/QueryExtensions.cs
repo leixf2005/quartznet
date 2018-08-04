@@ -19,8 +19,8 @@ namespace Quartz.Impl.RavenDB
                 throw new ArgumentException("trigger or job keys cannot contain '/' character");
             }
         }
-        
-        internal static string DocumentId<T>(this Key<T> key, string schedulerName) 
+
+        internal static string DocumentId<T>(this Key<T> key, string schedulerName)
             => schedulerName + DocumentIdPartSeparator + key.Group + DocumentIdPartSeparator + key.Name;
 
         internal static JobKey JobKeyFromDocumentId(this string id)
@@ -28,7 +28,7 @@ namespace Quartz.Impl.RavenDB
             var parts = id.Split(DocumentIdPartSeparatorArray);
             return new JobKey(parts[2], parts[1]);
         }
-        
+
         internal static TriggerKey TriggerIdFromDocumentId(this string id)
         {
             var parts = id.Split(DocumentIdPartSeparatorArray);
@@ -43,25 +43,29 @@ namespace Quartz.Impl.RavenDB
         {
             if (matcher.CompareWithOperator.Equals(StringOperator.Contains))
             {
-                queryable = queryable.Where(x => x.Group.Contains(matcher.CompareToValue));
+                return queryable.Where(x => x.Group.Contains(matcher.CompareToValue));
             }
-            else if (matcher.CompareWithOperator.Equals(StringOperator.StartsWith))
+
+            if (matcher.CompareWithOperator.Equals(StringOperator.StartsWith))
             {
-                queryable = queryable.Where(x => x.Group.StartsWith(matcher.CompareToValue));
-            } 
-            else if (matcher.CompareWithOperator.Equals(StringOperator.EndsWith))
+                return queryable.Where(x => x.Group.StartsWith(matcher.CompareToValue));
+            }
+
+            if (matcher.CompareWithOperator.Equals(StringOperator.EndsWith))
             {
-                queryable = queryable.Where(x => x.Group.EndsWith(matcher.CompareToValue));
-            } 
-            else if (matcher.CompareWithOperator.Equals(StringOperator.Equality))
+                return queryable.Where(x => x.Group.EndsWith(matcher.CompareToValue));
+            }
+
+            if (matcher.CompareWithOperator.Equals(StringOperator.Equality))
             {
-                queryable = queryable.Where(x => x.Group == matcher.CompareToValue);
-            } 
-            else if (matcher.CompareWithOperator.Equals(StringOperator.Anything))
+                return queryable.Where(x => x.Group == matcher.CompareToValue);
+            }
+
+            if (matcher.CompareWithOperator.Equals(StringOperator.Anything))
             {
                 return queryable;
-            } 
-            
+            }
+
             throw new NotSupportedException();
         }
     }

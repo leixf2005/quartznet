@@ -158,20 +158,20 @@ namespace Quartz.Impl.AdoJobStore
 
         protected DbMetadata DbMetadata => ConnectionManager.GetDbMetadata(DataSource);
 
-        protected abstract ConnectionAndTransactionHolder GetNonManagedTXConnection();
+        protected abstract Task<ConnectionAndTransactionHolder> GetNonManagedTXConnection();
 
         /// <summary>
         /// Gets the connection and starts a new transaction.
         /// </summary>
         /// <returns></returns>
-        protected virtual ConnectionAndTransactionHolder GetConnection()
+        protected virtual async Task<ConnectionAndTransactionHolder> GetConnection()
         {
             DbConnection conn;
             DbTransaction tx;
             try
             {
                 conn = ConnectionManager.GetConnection(DataSource);
-                conn.Open();
+                await conn.OpenAsync().ConfigureAwait(false);
             }
             catch (Exception e)
             {
@@ -407,7 +407,7 @@ namespace Quartz.Impl.AdoJobStore
             ConnectionAndTransactionHolder conn,
             CancellationToken cancellationToken) => Delegate.SelectTriggersForRecoveringJobs(conn, cancellationToken);
 
-        protected override Task StoreJob(
+        protected override Task DoStoreJob(
             ConnectionAndTransactionHolder conn,
             IJobDetail newJob,
             bool existingJob,
@@ -856,7 +856,7 @@ namespace Quartz.Impl.AdoJobStore
             CancellationToken cancellationToken)
         {
             bool transOwner = false;
-            ConnectionAndTransactionHolder conn = GetNonManagedTXConnection();
+            ConnectionAndTransactionHolder conn = await GetNonManagedTXConnection().ConfigureAwait(false);
             try
             {
                 RecoverMisfiredJobsResult result = RecoverMisfiredJobsResult.NoOp;
@@ -923,7 +923,7 @@ namespace Quartz.Impl.AdoJobStore
             bool transStateOwner = false;
             bool recovered = false;
 
-            ConnectionAndTransactionHolder conn = GetNonManagedTXConnection();
+            ConnectionAndTransactionHolder conn = await GetNonManagedTXConnection().ConfigureAwait(false);
             try
             {
                 // Other than the first time, always checkin first to make sure there is
@@ -1405,7 +1405,7 @@ namespace Quartz.Impl.AdoJobStore
                     // until after acquiring the lock since it isn't needed.
                     if (LockHandler.RequiresConnection)
                     {
-                        conn = GetNonManagedTXConnection();
+                        conn = await GetNonManagedTXConnection().ConfigureAwait(false);
                     }
 
                     transOwner = await LockHandler.ObtainLock(requestorId, conn, GetLockName(lockType), cancellationToken).ConfigureAwait(false);
@@ -1413,7 +1413,7 @@ namespace Quartz.Impl.AdoJobStore
 
                 if (conn == null)
                 {
-                    conn = GetNonManagedTXConnection();
+                    conn = await GetNonManagedTXConnection().ConfigureAwait(false);
                 }
 
                 T result = await txCallback(conn).ConfigureAwait(false);

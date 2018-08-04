@@ -29,7 +29,7 @@
   <ItemGroup Condition=" '$(TargetFramework)' == 'netcoreapp2.1' ">
     <PackageReference Include="Microsoft.Data.SQLite" Version="2.0.0" />
     <PackageReference Include="Oracle.ManagedDataAccess.Core" Version="2.12.0-beta2" />
-    <PackageReference Include="RavenDB.TestDriver" Version="4.0.5" />
+    <PackageReference Include="RavenDB.TestDriver" Version="4.0.6" />
   </ItemGroup>
   <ItemGroup Condition=" '$(TargetFramework)' == '$(TargetFullFrameworkVersion)' ">
     <Reference Include="Microsoft.CSharp" />

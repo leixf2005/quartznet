@@ -341,11 +341,6 @@ namespace Quartz.Impl.AdoJobStore
         /// Get the number of triggers in the given state that have
         /// misfired - according to the given timestamp.
         /// </summary>
-        /// <param name="conn"></param>
-        /// <param name="state1"></param>
-        /// <param name="ts"></param>
-        /// <param name="cancellationToken">The cancellation instruction.</param>
-        /// <returns></returns>
         public virtual async Task<int> CountMisfiredTriggersInState(
             ConnectionAndTransactionHolder conn,
             string state1,
@@ -1974,9 +1969,9 @@ namespace Quartz.Impl.AdoJobStore
                         DateTimeOffset? nft = GetDateTimeFromDbValue(nextFireTime);
 
                         status = new TriggerStatus(
-                            triggerKey, 
+                            triggerKey,
                             new JobKey(jobName, jobGroup),
-                            GetStateFromString(state), 
+                            GetStateFromString(state),
                             nft);
                     }
                 }
@@ -2953,7 +2948,7 @@ namespace Quartz.Impl.AdoJobStore
             {
                 cachedQueries[query] = result = AdoJobStoreUtil.ReplaceTablePrefix(query, tablePrefix, SchedulerNameLiteral);
             }
-            
+
             return result;
         }
 

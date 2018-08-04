@@ -1,4 +1,5 @@
 using System.Collections.Specialized;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 
@@ -7,6 +8,10 @@ using NUnit.Framework;
 using Quartz.Impl;
 using Quartz.Impl.RavenDB;
 using Quartz.Util;
+
+using Raven.Client.Documents;
+using Raven.Client.ServerWide;
+using Raven.Client.ServerWide.Operations;
 
 namespace Quartz.Tests.Integration.Impl.RavenDB4
 {
@@ -35,6 +40,24 @@ namespace Quartz.Tests.Integration.Impl.RavenDB4
         [Category("ravendb")]
         public async Task TestRavenJobStore()
         {
+            const string RavenUrl = "http://localhost:9999";
+            const string DatabaseName = "quartznet";
+
+            var store = new DocumentStore
+            {
+                Urls = new[]
+                {
+                    RavenUrl
+                }
+            };
+            store.Initialize();
+
+            var names = await store.Maintenance.Server.SendAsync(new GetDatabaseNamesOperation(0, 1024));
+            if (!names.Contains(DatabaseName))
+            {
+                await store.Maintenance.Server.SendAsync(new CreateDatabaseOperation(new DatabaseRecord(DatabaseName)));
+            }
+
             NameValueCollection properties = new NameValueCollection();
             properties["quartz.scheduler.instanceName"] = "TestScheduler";
             properties["quartz.scheduler.instanceId"] = "instance_one";
@@ -42,8 +65,8 @@ namespace Quartz.Tests.Integration.Impl.RavenDB4
             properties["quartz.threadPool.threadCount"] = "10";
             properties["quartz.jobStore.misfireThreshold"] = "60000";
             properties["quartz.jobStore.type"] = typeof(RavenJobStore).AssemblyQualifiedNameWithoutVersion();
-            properties["quartz.jobStore.url"] = "http://localhost:9999";
-            properties["quartz.jobStore.database"] = "quartznet";
+            properties["quartz.jobStore.url"] = RavenUrl;
+            properties["quartz.jobStore.database"] = DatabaseName;
             // not really used
             properties["quartz.serializer.type"] = "json";
 

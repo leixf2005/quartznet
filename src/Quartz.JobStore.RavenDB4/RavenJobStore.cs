@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+
+using Newtonsoft.Json.Linq;
 
 using Quartz.Core;
 using Quartz.Impl.Matchers;
@@ -21,7 +24,7 @@ using Raven.Client.Documents.Queries;
 
 namespace Quartz.Impl.RavenDB
 {
-    /// <summary> 
+    /// <summary>
     /// An implementation of <see cref="IJobStore" /> to use RavenDB as a persistent job store.
     /// Provides an <see cref="IJob" /> and <see cref="ITrigger" /> storage mechanism for the
     /// <see cref="QuartzScheduler" />'s use.
@@ -66,8 +69,8 @@ namespace Quartz.Impl.RavenDB
         }
 
         public override async Task Initialize(
-            ITypeLoadHelper typeLoadHelper, 
-            ISchedulerSignaler schedulerSignaler, 
+            ITypeLoadHelper typeLoadHelper,
+            ISchedulerSignaler schedulerSignaler,
             CancellationToken cancellationToken = default)
         {
             await base.Initialize(typeLoadHelper, schedulerSignaler, cancellationToken).ConfigureAwait(false);
@@ -90,6 +93,9 @@ namespace Quartz.Impl.RavenDB
                 },
                 Database = Database
             };
+
+            // TODO ideally optimize to better batch operations
+            documentStore.Conventions.MaxNumberOfRequestsPerSession = Int32.MaxValue;
             documentStore.OnBeforeQuery += (sender, beforeQueryExecutedArgs) => { beforeQueryExecutedArgs.QueryCustomization.WaitForNonStaleResults(); };
             documentStore.Initialize();
 
@@ -144,7 +150,7 @@ namespace Quartz.Impl.RavenDB
             await base.Shutdown(cancellationToken).ConfigureAwait(false);
 
             await SetSchedulerState(SchedulerState.Shutdown, cancellationToken).ConfigureAwait(false);
-            
+
             documentStore.Dispose();
             documentStore = null;
         }
@@ -160,10 +166,13 @@ namespace Quartz.Impl.RavenDB
         }
 
         protected override async Task<int> DeleteFiredTriggers(
-            RavenConnection conn, 
+            RavenConnection conn,
             CancellationToken cancellationToken)
         {
-            var options = new QueryOperationOptions {AllowStale = false};
+            var options = new QueryOperationOptions
+            {
+                AllowStale = false
+            };
             var op = await documentStore.Operations.SendAsync(
                 new DeleteByQueryOperation<FiredTrigger, FiredTriggerIndex>(x => x.Scheduler == InstanceName, options),
                 token: cancellationToken).ConfigureAwait(false);
@@ -173,31 +182,35 @@ namespace Quartz.Impl.RavenDB
         }
 
         protected override async Task<IReadOnlyCollection<TriggerKey>> GetTriggersInState(
-            RavenConnection conn, 
-            InternalTriggerState state, 
+            RavenConnection conn,
+            InternalTriggerState state,
             CancellationToken cancellationToken)
         {
             var triggers = await conn.QueryTriggers()
                 .Where(x => x.State == state)
-                .Select(x => new { x.Name, x.Group })
+                .Select(x => new
+                {
+                    x.Name,
+                    Group = x.Group + ""
+                })
                 .ToListAsync(cancellationToken).ConfigureAwait(false);
 
             var keys = new List<TriggerKey>();
             foreach (var trigger in triggers)
             {
-                keys.Add(new TriggerKey(trigger.Name, trigger.Group));                
+                keys.Add(new TriggerKey(trigger.Name, trigger.Group));
             }
             return keys;
         }
 
         protected override async Task<IReadOnlyCollection<IOperableTrigger>> GetTriggersForRecoveringJobs(
-            RavenConnection conn, 
+            RavenConnection conn,
             CancellationToken cancellationToken)
         {
             var records = await conn.QueryFiredTriggers()
                 .Where(x => x.SchedulerInstanceId == InstanceId && x.RequestsRecovery)
                 .ToListAsync(cancellationToken).ConfigureAwait(false);
-            
+
             List<IOperableTrigger> triggers = new List<IOperableTrigger>();
             List<FiredTriggerRecord> triggerData = new List<FiredTriggerRecord>();
 
@@ -209,12 +222,12 @@ namespace Quartz.Impl.RavenDB
                 int priority = record.Priority;
                 DateTimeOffset firedTime = record.FiredTime;
                 DateTimeOffset scheduledTime = record.ScheduledTime;
-                
+
                 SimpleTriggerImpl recoveryTrigger = new SimpleTriggerImpl(
                     "recover_" + InstanceId + "_" + dumId++,
-                    SchedulerConstants.DefaultRecoveryGroup, 
+                    SchedulerConstants.DefaultRecoveryGroup,
                     scheduledTime);
-                
+
                 recoveryTrigger.JobName = jobKey.Name;
                 recoveryTrigger.JobGroup = jobKey.Group;
                 recoveryTrigger.Priority = priority;
@@ -242,7 +255,7 @@ namespace Quartz.Impl.RavenDB
                 .ToListAsync(cancellationToken).ConfigureAwait(false);
 
             var mapLookup = maps.ToDictionary(x => x.Id);
-            
+
             for (int i = 0; i < triggers.Count; i++)
             {
                 IOperableTrigger trigger = triggers[i];
@@ -257,30 +270,24 @@ namespace Quartz.Impl.RavenDB
             }
 
             return triggers;
-            
+
         }
 
-        protected override async Task<int> UpdateTriggerStatesFromOtherStates(
+        protected override Task<int> UpdateTriggerStatesFromOtherStates(
             RavenConnection conn,
             InternalTriggerState newState,
             InternalTriggerState[] oldStates,
             CancellationToken cancellationToken )
         {
-            var targets = await conn.QueryTriggers()
-                .Where(x => x.State.In(oldStates))
-                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            var query = conn.QueryTriggers()
+                .Where(x => x.State.In(oldStates));
 
-            foreach (var trigger in targets)
-            {
-                trigger.State = newState;
-            }
-
-            return targets.Count;
+            return SetTriggerStateForResults(query, newState, cancellationToken);
         }
 
         protected override async Task<TriggerStatus> GetTriggerStatus(
-            RavenConnection conn, 
-            TriggerKey triggerKey, 
+            RavenConnection conn,
+            TriggerKey triggerKey,
             CancellationToken cancellationToken)
         {
             var trigger = await conn.QueryTrigger(triggerKey)
@@ -293,39 +300,38 @@ namespace Quartz.Impl.RavenDB
                         x.NextFireTimeUtc
                     })
                 .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
-            
+
+            if (trigger == null)
+            {
+                return null;
+            }
+
             var status = new TriggerStatus(
-                triggerKey, 
+                triggerKey,
                 trigger.JobId.JobKeyFromDocumentId(),
-                trigger.State, 
+                trigger.State,
                 trigger.NextFireTimeUtc);
-            
+
             return status;
         }
 
-        protected override async Task<int> UpdateTriggerStateFromOtherStates(
+        protected override Task<int> UpdateTriggerStateFromOtherStates(
             RavenConnection conn,
             TriggerKey triggerKey,
             InternalTriggerState newState,
             InternalTriggerState[] oldStates,
             CancellationToken cancellationToken )
         {
-            var targets = await conn.QueryTriggers()
-                .Where(x => x.Id == triggerKey.DocumentId(InstanceName)  && x.State.In(oldStates))
-                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            var query = conn.QueryTriggers()
+                .Where(x => x.Id == triggerKey.DocumentId(InstanceName) && x.State.In(oldStates));
 
-            foreach (var trigger in targets)
-            {
-                trigger.State = newState;
-            }
-
-            return targets.Count;
+            return SetTriggerStateForResults(query, newState, cancellationToken);
         }
 
         protected override async Task<bool> GetMisfiredTriggersInWaitingState(
-            RavenConnection conn, 
-            int count, 
-            List<TriggerKey> resultList, 
+            RavenConnection conn,
+            int count,
+            List<TriggerKey> resultList,
             CancellationToken cancellationToken)
         {
             var triggers = await conn.QueryTriggers()
@@ -333,12 +339,16 @@ namespace Quartz.Impl.RavenDB
                     x.MisfireInstruction != MisfireInstruction.IgnoreMisfirePolicy
                     && x.NextFireTimeUtc < MisfireTime
                     && x.State == InternalTriggerState.Waiting)
-                .OrderBy(x => x.NextFireTimeTicks)
+                .OrderBy(x => x.NextFireTimeUtc)
                 .ThenByDescending(x => x.Priority)
-                .Select(x => new {x.Name, x.Group})
+                .Select(x => new
+                {
+                    x.Name,
+                    Group = x.Group + ""
+                })
                 .Take(count != -1 ? count + 1 : count)
                 .ToListAsync(cancellationToken).ConfigureAwait(false);
-            
+
             bool hasMoreTriggersInStateThanRequested = false;
             foreach (var trigger in triggers)
             {
@@ -357,30 +367,42 @@ namespace Quartz.Impl.RavenDB
 
         protected override IMisfireHandlerOperations MisfireHandlerOperations => this;
 
-        protected override async Task StoreJob(
+        protected override async Task DoStoreJob(
             RavenConnection conn,
-            IJobDetail newJob, 
-            bool existingJob, 
+            IJobDetail jobDetail,
+            bool existingJob,
             CancellationToken cancellationToken)
         {
-            var job = new Job(newJob, InstanceName);
-            await conn.StoreAsync(job, job.Id, cancellationToken).ConfigureAwait(false);
+            if (existingJob)
+            {
+                var job = await conn.LoadJob(jobDetail.Key, cancellationToken).ConfigureAwait(false);
+                job.UpdateWith(jobDetail);
+            }
+            else
+            {
+                var job = new Job(jobDetail, InstanceName);
+                await conn.StoreAsync(job, job.Id, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         protected override async Task<IReadOnlyCollection<TriggerKey>> GetTriggerNamesForJob(
-            RavenConnection conn, 
+            RavenConnection conn,
             JobKey jobKey,
             CancellationToken cancellationToken)
         {
             var triggers = await conn.QueryTriggers()
                 .Where(x => x.JobId == jobKey.DocumentId(InstanceName))
-                .Select(x => new {x.Name, x.Group})
+                .Select(x => new
+                {
+                    x.Name,
+                    Group = x.Group + ""
+                })
                 .ToListAsync(cancellationToken).ConfigureAwait(false);
 
             var list = new List<TriggerKey>(10);
             foreach (var trigger in triggers)
             {
-                list.Add(new TriggerKey(trigger.Name, trigger.Group));                
+                list.Add(new TriggerKey(trigger.Name, trigger.Group));
             }
 
             return list;
@@ -394,7 +416,7 @@ namespace Quartz.Impl.RavenDB
             var triggers = await conn.QueryFiredTriggers()
                 .Where(x => x.JobId == jobKey.DocumentId(InstanceName))
                 .ToListAsync(cancellationToken).ConfigureAwait(false);
-                
+
             var records = new List<FiredTriggerRecord>(triggers.Count);
             foreach (var trigger in triggers)
             {
@@ -407,15 +429,15 @@ namespace Quartz.Impl.RavenDB
         protected override async Task<IJobDetail> RetrieveJob(
             RavenConnection conn,
             JobKey jobKey,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
             var job = await conn.LoadJob(jobKey, cancellationToken).ConfigureAwait(false);
             return job?.Deserialize();
         }
 
         protected override async Task<bool> RemoveTrigger(
-            RavenConnection conn, 
-            TriggerKey triggerKey, 
+            RavenConnection conn,
+            TriggerKey triggerKey,
             IJobDetail job,
             CancellationToken cancellationToken)
         {
@@ -429,7 +451,7 @@ namespace Quartz.Impl.RavenDB
                 if (job == null)
                 {
                     var dbJob = await conn.LoadJob(trigger.JobId, cancellationToken).ConfigureAwait(false);
-                    job = dbJob.Deserialize();                
+                    job = dbJob.Deserialize();
                 }
 
                 removedTrigger = await DeleteTriggerAndChildren(conn, triggerKey, cancellationToken).ConfigureAwait(false);
@@ -454,6 +476,29 @@ namespace Quartz.Impl.RavenDB
             return removedTrigger;
         }
 
+        protected override async Task<bool> DoReplaceTrigger(
+            RavenConnection conn,
+            TriggerKey triggerKey,
+            IOperableTrigger newTrigger,
+            IJobDetail job,
+            CancellationToken cancellationToken)
+        {
+            var trigger = await conn.LoadTrigger(triggerKey, cancellationToken).ConfigureAwait(false);
+            bool replaced = trigger != null;
+
+            await StoreTrigger(
+                conn,
+                newTrigger,
+                job,
+                replaceExisting: replaced,
+                InternalTriggerState.Waiting,
+                forceState: false,
+                recovering: false,
+                cancellationToken).ConfigureAwait(false);
+
+            return replaced;
+        }
+
         protected override async Task<IOperableTrigger> RetrieveTrigger(
             RavenConnection conn,
             TriggerKey triggerKey,
@@ -464,7 +509,7 @@ namespace Quartz.Impl.RavenDB
         }
 
         protected override async Task AddPausedTriggerGroup(
-            RavenConnection conn, 
+            RavenConnection conn,
             string groupName,
             CancellationToken cancellationToken)
         {
@@ -473,24 +518,33 @@ namespace Quartz.Impl.RavenDB
         }
 
         protected override async Task<bool> IsTriggerGroupPaused(
-            RavenConnection conn, 
-            string groupName, 
+            RavenConnection conn,
+            string groupName,
             CancellationToken cancellationToken)
         {
             var pausedGroups = await GetSchedulerData(conn, x => x.PausedTriggerGroups, cancellationToken).ConfigureAwait(false);
             return pausedGroups.Contains(groupName);
         }
 
-        protected override Task StoreTrigger(
-            RavenConnection conn, 
-            bool existingTrigger, 
-            IOperableTrigger trigger, 
-            InternalTriggerState state, 
-            IJobDetail job, 
+        protected override async Task StoreTrigger(
+            RavenConnection conn,
+            bool existingTrigger,
+            IOperableTrigger trigger,
+            InternalTriggerState state,
+            IJobDetail job,
             CancellationToken cancellationToken)
         {
-            var entity = new Trigger(trigger, InstanceName);
-            return conn.StoreAsync(entity, entity.Id, cancellationToken);
+            Trigger entity;
+            if (existingTrigger)
+            {
+                entity = await conn.LoadTrigger(trigger.Key, cancellationToken).ConfigureAwait(false);
+                entity.UpdateWith(trigger);
+            }
+            else
+            {
+                entity = new Trigger(trigger, InstanceName);
+                await conn.StoreAsync(entity, entity.Id, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         protected override async Task<bool> CalendarExists(
@@ -517,14 +571,13 @@ namespace Quartz.Impl.RavenDB
         {
             return conn.ExistsAsync(triggerKey.DocumentId(InstanceName));
         }
-        
+
         protected override async Task ClearAllSchedulingData(
-            RavenConnection conn, 
+            RavenConnection conn,
             CancellationToken cancellationToken)
         {
             var scheduler = await conn.LoadScheduler(cancellationToken).ConfigureAwait(false);
             scheduler.Calendars.Clear();
-            scheduler.PausedJobGroups.Clear();
             scheduler.PausedTriggerGroups.Clear();
 
             var options = new QueryOperationOptions {AllowStale = false};
@@ -598,7 +651,7 @@ namespace Quartz.Impl.RavenDB
 
         protected override async Task UpdateJobData(
             RavenConnection conn,
-            IJobDetail jobDetail, 
+            IJobDetail jobDetail,
             CancellationToken cancellationToken)
         {
             var job = await conn.LoadJob(jobDetail.Key, cancellationToken).ConfigureAwait(false);
@@ -615,19 +668,19 @@ namespace Quartz.Impl.RavenDB
         }
 
         protected override Task UpdateTriggerStatesForJob(
-            RavenConnection conn, 
-            JobKey triggerJobKey, 
-            InternalTriggerState state, 
+            RavenConnection conn,
+            JobKey triggerJobKey,
+            InternalTriggerState state,
             CancellationToken cancellationToken)
         {
             var query = conn.QueryTriggers()
                 .Where(x => x.JobId == triggerJobKey.DocumentId(InstanceName));
-            
+
             return SetTriggerStateForResults(query, state, cancellationToken);
         }
 
-        private static async Task SetTriggerStateForResults(
-            IRavenQueryable<Trigger> query, 
+        private static async Task<int> SetTriggerStateForResults(
+            IRavenQueryable<Trigger> query,
             InternalTriggerState state,
             CancellationToken cancellationToken)
         {
@@ -638,12 +691,14 @@ namespace Quartz.Impl.RavenDB
             {
                 trigger.State = state;
             }
+
+            return triggers.Count;
         }
 
         protected override async Task UpdateTriggerState(
-            RavenConnection conn, 
-            TriggerKey triggerKey, 
-            InternalTriggerState state, 
+            RavenConnection conn,
+            TriggerKey triggerKey,
+            InternalTriggerState state,
             CancellationToken cancellationToken)
         {
             var trigger = await conn.LoadTrigger(triggerKey, cancellationToken).ConfigureAwait(false);
@@ -703,7 +758,11 @@ namespace Quartz.Impl.RavenDB
 
             {
                 var allJobs = await conn.QueryJobs()
-                    .Select(x => new {x.Name, x.Group})
+                    .Select(x => new
+                    {
+                        x.Name,
+                        Group = x.Group + ""
+                    })
                     .ToListAsync(cancellationToken).ConfigureAwait(false);
 
                 foreach (var job in allJobs)
@@ -728,7 +787,11 @@ namespace Quartz.Impl.RavenDB
 
             var result = new HashSet<TriggerKey>();
             var allTriggers = await conn.QueryTriggers()
-                .Select(x => new {x.Name, x.Group})
+                .Select(x => new
+                {
+                    x.Name,
+                    Group = x.Group + ""
+                })
                 .ToListAsync(cancellationToken).ConfigureAwait(false);
 
             foreach (var trigger in allTriggers)
@@ -742,14 +805,11 @@ namespace Quartz.Impl.RavenDB
             return result;
         }
 
-        protected override async Task<IReadOnlyCollection<string>> GetJobGroupNames(
+        protected override Task<IReadOnlyCollection<string>> GetJobGroupNames(
             RavenConnection conn,
             CancellationToken cancellationToken)
         {
-            return await conn.QueryJobs()
-                .Select(x => x.Group)
-                .Distinct()
-                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            return ExtractGroup(conn, conn.QueryJobs(), cancellationToken);
         }
 
         protected override Task<IReadOnlyCollection<string>> GetTriggerGroupNames(
@@ -759,21 +819,16 @@ namespace Quartz.Impl.RavenDB
             return GetTriggerGroupNames(conn, GroupMatcher<TriggerKey>.AnyGroup(), cancellationToken);
         }
 
-        private async Task<IReadOnlyCollection<string>> GetTriggerGroupNames(
+        private Task<IReadOnlyCollection<string>> GetTriggerGroupNames(
             RavenConnection conn,
-            GroupMatcher<TriggerKey> matcher, 
+            GroupMatcher<TriggerKey> matcher,
             CancellationToken cancellationToken)
         {
             var query = conn.QueryTriggers();
 
             query = query.WhereMatches(matcher);
-            
-            var result = await query
-                .Select(x => x.Group)
-                .Distinct()
-                .ToListAsync(cancellationToken).ConfigureAwait(false);
 
-            return result;
+            return ExtractGroup(conn, query, cancellationToken);
         }
 
         protected override async Task<IReadOnlyCollection<string>> GetCalendarNames(
@@ -803,7 +858,7 @@ namespace Quartz.Impl.RavenDB
 
         protected override async Task<TriggerState> GetTriggerState(
             RavenConnection conn,
-            TriggerKey triggerKey, 
+            TriggerKey triggerKey,
             CancellationToken cancellationToken)
         {
             var trigger = await conn.LoadTrigger(triggerKey, cancellationToken).ConfigureAwait(false);
@@ -829,10 +884,10 @@ namespace Quartz.Impl.RavenDB
                     return TriggerState.Normal;
             }
         }
-        
+
         protected override async Task<InternalTriggerState> GetInternalTriggerState(
             RavenConnection conn,
-            TriggerKey triggerKey, 
+            TriggerKey triggerKey,
             CancellationToken cancellationToken)
         {
             var trigger = await conn.LoadTrigger(triggerKey, cancellationToken).ConfigureAwait(false);
@@ -844,54 +899,37 @@ namespace Quartz.Impl.RavenDB
             GroupMatcher<TriggerKey> matcher,
             CancellationToken cancellationToken)
         {
-            var resumedGroups = new HashSet<string>();
+            var scheduler = await conn.LoadScheduler(cancellationToken).ConfigureAwait(false);
+            foreach (var triggerGroup in scheduler.PausedTriggerGroups.ToList())
+            {
+                if (matcher.CompareWithOperator.Evaluate(triggerGroup, matcher.CompareToValue))
+                {
+                    scheduler.PausedTriggerGroups.Remove(triggerGroup);
+                }
+            }
+
+            var groups = new ReadOnlyCompatibleHashSet<string>();
             var keys = await GetTriggerKeys(matcher, cancellationToken).ConfigureAwait(false);
 
             foreach (TriggerKey triggerKey in keys)
             {
-                await ResumeTrigger(triggerKey, cancellationToken).ConfigureAwait(false);
-                resumedGroups.Add(triggerKey.Group);
+                await ResumeTrigger(conn, triggerKey, cancellationToken).ConfigureAwait(false);
+                groups.Add(triggerKey.Group);
             }
-
-            return new List<string>(resumedGroups);
-        }
-
-        protected override async Task<IReadOnlyCollection<string>> GetPausedTriggerGroups(
-            RavenConnection conn, 
-            CancellationToken cancellationToken)
-        {
-            var groups = await conn.QueryTriggers()
-                .Where(x => x.State == InternalTriggerState.Paused || x.State == InternalTriggerState.PausedAndBlocked)
-                .Select(x => x.Group)
-                .Distinct()
-                .ToListAsync(cancellationToken).ConfigureAwait(false);
 
             return groups;
         }
 
-        /// <summary>
-        /// Gets the paused job groups.
-        /// </summary>
-        private Task<HashSet<string>> GetPausedJobGroups(
+        protected override Task<IReadOnlyCollection<string>> GetPausedTriggerGroups(
             RavenConnection conn,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
-            return GetSchedulerData(conn, x => x.PausedJobGroups, cancellationToken);
+            return GetSchedulerData<IReadOnlyCollection<string>>(conn, x => x.PausedTriggerGroups, cancellationToken);
         }
 
-        /// <summary>
-        /// Gets the blocked jobs set.
-        /// </summary>
-        private Task<HashSet<string>> GetBlockedJobs(
-            RavenConnection conn,
-            CancellationToken cancellationToken = default)
-        {
-            return GetSchedulerData(conn, x => x.BlockedJobs, cancellationToken);
-        }
-        
         private async Task<T> GetSchedulerData<T>(
             RavenConnection conn,
-            Func<Scheduler, T> extractor, 
+            Func<Scheduler, T> extractor,
             CancellationToken cancellationToken = default)
         {
             var scheduler = await conn.LoadScheduler(cancellationToken).ConfigureAwait(false);
@@ -906,57 +944,11 @@ namespace Quartz.Impl.RavenDB
             scheduler.PausedTriggerGroups.Remove(AllGroupsPaused);
         }
 
-        /// <summary>
-        /// Applies the misfire.
-        /// </summary>
-        /// <param name="trigger">The trigger wrapper.</param>
-        /// <returns></returns>
-        private async Task<bool> ApplyMisfire(Trigger trigger)
-        {
-            DateTimeOffset misfireTime = SystemTime.UtcNow();
-            if (MisfireThreshold > TimeSpan.Zero)
-            {
-                misfireTime = misfireTime.AddMilliseconds(-1 * MisfireThreshold.TotalMilliseconds);
-            }
-
-            DateTimeOffset? nextFireTimeUtc = trigger.NextFireTimeUtc;
-            if (!nextFireTimeUtc.HasValue || nextFireTimeUtc.Value > misfireTime
-                                          || trigger.MisfireInstruction == MisfireInstruction.IgnoreMisfirePolicy)
-            {
-                return false;
-            }
-
-            ICalendar cal = null;
-            if (trigger.CalendarName != null)
-            {
-                cal = await RetrieveCalendar(trigger.CalendarName).ConfigureAwait(false);
-            }
-
-            // Deserialize to an IOperableTrigger to apply original methods on the trigger
-            var trig = trigger.Deserialize();
-            await SchedulerSignaler.NotifyTriggerListenersMisfired(trig).ConfigureAwait(false);
-            trig.UpdateAfterMisfire(cal);
-            trigger.UpdateFireTimes(trig);
-
-            if (!trig.GetNextFireTimeUtc().HasValue)
-            {
-                await SchedulerSignaler.NotifySchedulerListenersFinalized(trig).ConfigureAwait(false);
-                trigger.State = InternalTriggerState.Complete;
-
-            }
-            else if (nextFireTimeUtc.Equals(trig.GetNextFireTimeUtc()))
-            {
-                return false;
-            }
-
-            return true;
-        }
-
         protected override async Task<IReadOnlyCollection<TriggerKey>> GetTriggerToAcquire(
-            RavenConnection conn, 
+            RavenConnection conn,
             DateTimeOffset noLaterThan,
-            DateTimeOffset noEarlierThan, 
-            int maxCount, 
+            DateTimeOffset noEarlierThan,
+            int maxCount,
             CancellationToken cancellationToken)
         {
             if (maxCount < 1)
@@ -968,14 +960,17 @@ namespace Quartz.Impl.RavenDB
                 .Where(x =>
                     x.State == InternalTriggerState.Waiting
                     && x.NextFireTimeUtc <= noLaterThan
-                    && x.NextFireTimeUtc >= noEarlierThan
                     && (x.MisfireInstruction == -1 || (x.MisfireInstruction != -1 && x.NextFireTimeUtc >= noEarlierThan)))
                 .OrderBy(x => x.NextFireTimeUtc)
                 .ThenByDescending(x => x.Priority)
-                .Select(x => new { x.Name, x.Group })
+                .Select(x => new
+                {
+                    x.Name,
+                    Group = x.Group + ""
+                })
                 .Take(maxCount)
                 .ToListAsync(cancellationToken).ConfigureAwait(false);
-            
+
             var nextTriggers = new List<TriggerKey>(triggers.Count);
             foreach (var trigger in triggers)
             {
@@ -1036,8 +1031,8 @@ namespace Quartz.Impl.RavenDB
         }
 
         protected override async Task<bool> DeleteJobAndChildren(
-            RavenConnection conn, 
-            JobKey jobKey, 
+            RavenConnection conn,
+            JobKey jobKey,
             CancellationToken cancellationToken)
         {
             var job = await conn.LoadJob(jobKey, cancellationToken).ConfigureAwait(false);
@@ -1115,7 +1110,7 @@ namespace Quartz.Impl.RavenDB
             ft.IsNonConcurrent = job?.ConcurrentExecutionDisallowed ?? false;
             ft.RequestsRecovery = job?.RequestsRecovery ?? false;
         }
-        
+
         protected override async Task<IReadOnlyCollection<FiredTriggerRecord>> GetInstancesFiredTriggerRecords(
             RavenConnection conn,
             string instanceId,
@@ -1134,7 +1129,7 @@ namespace Quartz.Impl.RavenDB
         }
 
         protected override Task<T> ExecuteInLock<T>(
-            LockType lockType, 
+            LockType lockType,
             Func<RavenConnection, Task<T>> txCallback,
             CancellationToken cancellationToken)
         {
@@ -1143,7 +1138,7 @@ namespace Quartz.Impl.RavenDB
 
         protected override async Task<T> ExecuteInNonManagedTXLock<T>(
             LockType lockType,
-            Func<RavenConnection, Task<T>> txCallback, 
+            Func<RavenConnection, Task<T>> txCallback,
             Func<RavenConnection, T, Task<bool>> txValidator,
             CancellationToken cancellationToken)
         {
@@ -1179,7 +1174,7 @@ namespace Quartz.Impl.RavenDB
                         throw;
                     }
                 }
-               
+
                 DateTimeOffset? sigTime = conn.SignalSchedulingChangeOnTxCompletion;
                 if (sigTime != null)
                 {
@@ -1222,11 +1217,124 @@ namespace Quartz.Impl.RavenDB
             throw new NotImplementedException();
         }
 
-        Task<RecoverMisfiredJobsResult> IMisfireHandlerOperations.RecoverMisfires(
+        async Task<RecoverMisfiredJobsResult> IMisfireHandlerOperations.RecoverMisfires(
             Guid requestorId,
             CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            bool transOwner = false;
+            var conn = new RavenConnection(documentStore.OpenAsyncSession(), InstanceName);
+            try
+            {
+                RecoverMisfiredJobsResult result = RecoverMisfiredJobsResult.NoOp;
+
+                // Before we make the potentially expensive call to acquire the
+                // trigger lock, peek ahead to see if it is likely we would find
+                // misfired triggers requiring recovery.
+                int misfireCount = DoubleCheckLockMisfireHandler
+                    ? await CountMisfiredTriggersInState(conn, InternalTriggerState.Waiting, MisfireTime, cancellationToken).ConfigureAwait(false)
+                    : int.MaxValue;
+
+                if (Log.IsDebugEnabled())
+                {
+                    Log.DebugFormat("Found {0} triggers that missed their scheduled fire-time.", misfireCount);
+                }
+
+                if (misfireCount > 0)
+                {
+                    transOwner = await lockHandler.ObtainLock(requestorId, conn, LockType.TriggerAccess, cancellationToken).ConfigureAwait(false);
+
+                    result = await RecoverMisfiredJobs(conn, false, cancellationToken).ConfigureAwait(false);
+                }
+
+                await conn.Commit(cancellationToken).ConfigureAwait(false);
+                return result;
+            }
+            catch (JobPersistenceException)
+            {
+                conn.Rollback();
+                throw;
+            }
+            catch (Exception e)
+            {
+                conn.Rollback();
+                throw new JobPersistenceException("Database error recovering from misfires.", e);
+            }
+            finally
+            {
+                if (transOwner)
+                {
+                    try
+                    {
+                        await lockHandler.ReleaseLock(requestorId, LockType.TriggerAccess, cancellationToken).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        conn.Dispose();
+                    }
+                }
+            }
         }
+
+        private static Task<int> CountMisfiredTriggersInState(
+            RavenConnection conn,
+            InternalTriggerState state,
+            DateTimeOffset misfireTime,
+            CancellationToken cancellationToken)
+        {
+            return conn.QueryTriggers()
+                .Where(x =>
+                    x.MisfireInstruction != MisfireInstruction.IgnoreMisfirePolicy
+                    && x.NextFireTimeUtc < misfireTime
+                    && x.State == state)
+                .CountAsync(cancellationToken);
+        }
+
+        // TODO http://issues.hibernatingrhinos.com/issue/RavenDB-11668
+        private static async Task<IReadOnlyCollection<string>> ExtractGroup<T>(
+            RavenConnection conn,
+            IRavenQueryable<T> query,
+            CancellationToken cancellationToken) where T : IHasGroup
+        {
+            var queryString = query.ToString();
+
+            var distinct = query.Select(x => x.Group).Distinct();
+            if (!distinct.ToString().EndsWith("'Group'", StringComparison.Ordinal))
+            {
+                // no workaround needed
+                return await distinct.ToListAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var idx1 = queryString.IndexOf('\'');
+            var idx2 = queryString.IndexOf('\'', idx1 + 1) + 1;
+
+            // build a better query
+            var newQuery = queryString.Substring(0, idx2);
+            newQuery += " as idx" + queryString.Substring(idx2);
+            newQuery += " select distinct idx.Group";
+
+            var rawDocumentQuery = conn.RawQuery<JObject>(newQuery);
+
+            // extract parameters that should be used
+            var provider = (IRavenQueryProvider) query.Provider;
+            var documentQuery = provider.ToAsyncDocumentQuery<T>(query.Expression);
+
+            var queryParametersField = documentQuery.GetType().GetField("QueryParameters", BindingFlags.Instance | BindingFlags.NonPublic);
+            var queryParameters = (Raven.Client.Parameters) queryParametersField.GetValue(documentQuery);
+
+            foreach (var pair in queryParameters)
+            {
+                rawDocumentQuery.AddParameter(pair.Key, pair.Value);
+            }
+
+            var jObjects = await rawDocumentQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
+            var returnValue = new List<string>(jObjects.Count);
+            foreach (var o in jObjects)
+            {
+                returnValue.Add(o["Group"].Value<string>());
+            }
+
+            return returnValue;
+        }
+
     }
 }

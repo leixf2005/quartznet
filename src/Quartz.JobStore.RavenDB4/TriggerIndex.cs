@@ -15,13 +15,15 @@ namespace Quartz.Impl.RavenDB
                     trigger.Group,
                     trigger.JobId,
                     trigger.MisfireInstruction,
-                    trigger.NextFireTimeTicks,
                     trigger.NextFireTimeUtc,
                     trigger.Priority,
                     trigger.State,
                     trigger.Scheduler,
                     trigger.CalendarName
                 };
+
+            Store(x => x.Name, FieldStorage.Yes);
+            Store(x => x.Group, FieldStorage.Yes);
         }
     }
 }

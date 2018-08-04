@@ -3,8 +3,27 @@ using System.Collections.Generic;
 
 namespace Quartz.Impl.RavenDB
 {
-    internal class Job
+    internal class Job : IHasGroup
     {
+        private Job()
+        {
+        }
+
+        public Job(
+            IJobDetail newJob,
+            string schedulerInstanceName) : this()
+        {
+            newJob.Key.Validate();
+
+            Id = newJob.Key.DocumentId(schedulerInstanceName);
+            Name = newJob.Key.Name;
+            Group = newJob.Key.Group;
+
+            Scheduler = schedulerInstanceName;
+
+            UpdateWith(newJob);
+        }
+
         public string Id { get; set; }
         public string Name { get; set; }
         public string Group { get; set; }
@@ -18,27 +37,15 @@ namespace Quartz.Impl.RavenDB
         public bool RequestsRecovery { get; set; }
         public IDictionary<string, object> JobDataMap { get; set; }
 
-        public Job(IJobDetail newJob, string schedulerInstanceName)
+        internal void UpdateWith(IJobDetail job)
         {
-            if (newJob == null)
-            {
-                return;
-            }
-
-            newJob.Key.Validate();
-            
-            Id = newJob.Key.DocumentId(schedulerInstanceName);
-            Name = newJob.Key.Name;
-            Group = newJob.Key.Group;
-            Scheduler = schedulerInstanceName;
-
-            Description = newJob.Description;
-            JobType = newJob.JobType;
-            Durable = newJob.Durable;
-            ConcurrentExecutionDisallowed = newJob.ConcurrentExecutionDisallowed;
-            PersistJobDataAfterExecution = newJob.PersistJobDataAfterExecution;
-            RequestsRecovery = newJob.RequestsRecovery;
-            JobDataMap = new Dictionary<string, object>(newJob.JobDataMap.WrappedMap);
+            Description = job.Description;
+            JobType = job.JobType;
+            Durable = job.Durable;
+            ConcurrentExecutionDisallowed = job.ConcurrentExecutionDisallowed;
+            PersistJobDataAfterExecution = job.PersistJobDataAfterExecution;
+            RequestsRecovery = job.RequestsRecovery;
+            JobDataMap = new Dictionary<string, object>(job.JobDataMap.WrappedMap);
         }
 
         public IJobDetail Deserialize()

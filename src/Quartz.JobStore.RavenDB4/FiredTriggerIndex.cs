@@ -12,10 +12,12 @@ namespace Quartz.Impl.RavenDB
                 select new
                 {
                     trigger.Scheduler,
+                    trigger.SchedulerInstanceId,
                     trigger.TriggerId,
                     trigger.JobId,
                     trigger.Priority,
                     trigger.State,
+                    trigger.RequestsRecovery
                 };
         }
     }

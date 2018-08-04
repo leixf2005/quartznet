@@ -32,7 +32,7 @@ namespace Quartz.Impl
         {
             Log = LogProvider.GetLogger(GetType());
         }
-        
+
         /// <summary>
         /// Gets the log.
         /// </summary>
@@ -63,7 +63,7 @@ namespace Quartz.Impl
         /// </para>
         /// </remarks>
         public bool LockOnInsert { get; set; } = true;
-        
+
         /// <summary>
         /// Whether or not the query and update to acquire a Trigger for firing
         /// should be performed after obtaining an explicit DB lock (to avoid
@@ -79,7 +79,7 @@ namespace Quartz.Impl
 
         protected bool SchedulerRunning { get; private set; }
         protected bool IsShutdown { get; private set; }
-        
+
         /// <summary>
         /// Gets or sets the number of retries before an error is logged for recovery operations.
         /// </summary>
@@ -116,7 +116,7 @@ namespace Quartz.Impl
         /// </summary>
         /// <returns></returns>
         public bool MakeThreadsDaemons { get; set; }
-        
+
         /// <inheritdoc />
         public bool SupportsPersistence => true;
 
@@ -177,7 +177,7 @@ namespace Quartz.Impl
                 misfireHandlerFrequency = value;
             }
         }
-        
+
         /// <summary>
         /// Get whether to check to see if there are Triggers that have misfired
         /// before actually acquiring the lock to recover them.  This should be
@@ -211,7 +211,7 @@ namespace Quartz.Impl
         protected abstract IClusterManagementOperations ClusterManagementOperations { get; }
 
         protected abstract IMisfireHandlerOperations MisfireHandlerOperations { get; }
-        
+
         /// <inheritdoc />
         public virtual Task Initialize(
             ITypeLoadHelper typeLoadHelper,
@@ -235,6 +235,7 @@ namespace Quartz.Impl
                     MakeThreadsDaemons,
                     RetryInterval,
                     RetryableActionErrorLogThreshold,
+                    ClusterCheckinInterval,
                     SchedulerSignaler,
                     ClusterManagementOperations);
 
@@ -266,7 +267,7 @@ namespace Quartz.Impl
 
             SchedulerRunning = true;
         }
-        
+
         /// <inheritdoc />
         public virtual Task SchedulerPaused(CancellationToken cancellationToken = default)
         {
@@ -311,7 +312,7 @@ namespace Quartz.Impl
                 LockType.TriggerAccess,
                 conn => RecoverJobs(conn, cancellationToken),
                 cancellationToken);
-        
+
         private async Task RecoverJobs(
             TUnitOfWorkConnection conn,
             CancellationToken cancellationToken = default)
@@ -320,13 +321,13 @@ namespace Quartz.Impl
             {
                 // update inconsistent job states
                 int rows = await UpdateTriggerStatesFromOtherStates(
-                    conn, 
-                    newState: InternalTriggerState.Waiting, 
-                    oldStates: new[] { InternalTriggerState.Acquired, InternalTriggerState.Blocked }, 
+                    conn,
+                    newState: InternalTriggerState.Waiting,
+                    oldStates: new[] { InternalTriggerState.Acquired, InternalTriggerState.Blocked },
                     cancellationToken).ConfigureAwait(false);
 
                 rows += await UpdateTriggerStatesFromOtherStates(
-                    conn, 
+                    conn,
                     newState: InternalTriggerState.Paused,
                     oldStates: new[] { InternalTriggerState.PausedAndBlocked },
                     cancellationToken).ConfigureAwait(false);
@@ -404,9 +405,9 @@ namespace Quartz.Impl
             // We must still look for the MISFIRED state in case triggers were left
             // in this state when upgrading to this version that does not support it.
             bool hasMoreMisfiredTriggers = await GetMisfiredTriggersInWaitingState(
-                conn, 
-                maxMisfiresToHandleAtATime, 
-                misfiredTriggers, 
+                conn,
+                maxMisfiresToHandleAtATime,
+                misfiredTriggers,
                 cancellationToken).ConfigureAwait(false);
 
             if (hasMoreMisfiredTriggers)
@@ -433,11 +434,11 @@ namespace Quartz.Impl
                 }
 
                 await DoUpdateOfMisfiredTrigger(
-                    conn, 
-                    trigger, 
-                    forceState: false, 
-                    InternalTriggerState.Waiting, 
-                    recovering, 
+                    conn,
+                    trigger,
+                    forceState: false,
+                    InternalTriggerState.Waiting,
+                    recovering,
                     cancellationToken).ConfigureAwait(false);
 
                 DateTimeOffset? nextTime = trigger.GetNextFireTimeUtc();
@@ -478,11 +479,11 @@ namespace Quartz.Impl
                 }
 
                 await DoUpdateOfMisfiredTrigger(
-                    conn, 
-                    trigger, 
-                    forceState, 
-                    newStateIfNotComplete, 
-                    recovering: false, 
+                    conn,
+                    trigger,
+                    forceState,
+                    newStateIfNotComplete,
+                    recovering: false,
                     cancellationToken).ConfigureAwait(false);
 
                 return true;
@@ -497,7 +498,7 @@ namespace Quartz.Impl
             TUnitOfWorkConnection conn,
             IOperableTrigger trig,
             bool forceState,
-            InternalTriggerState newStateIfNotComplete, 
+            InternalTriggerState newStateIfNotComplete,
             bool recovering,
             CancellationToken cancellationToken)
         {
@@ -521,10 +522,10 @@ namespace Quartz.Impl
                 await StoreTrigger(conn, trig, null, true, newStateIfNotComplete, forceState, recovering, cancellationToken).ConfigureAwait(false);
             }
         }
-        
+
         /// <inheritdoc />
         public async Task StoreJobAndTrigger(
-            IJobDetail newJob, 
+            IJobDetail newJob,
             IOperableTrigger newTrigger,
             CancellationToken cancellationToken = default)
         {
@@ -538,35 +539,42 @@ namespace Quartz.Impl
         /// <inheritdoc />
         public Task StoreJob(
             IJobDetail newJob,
-            bool replaceExisting, 
+            bool replaceExisting,
             CancellationToken cancellationToken = default)
         {
             return ExecuteInLock(
-                LockOnInsert || replaceExisting ? LockType.TriggerAccess : LockType.None, async conn =>
-                {
-                    var existingJob = await JobExists(conn, newJob.Key, cancellationToken).ConfigureAwait(false);
-                    if (existingJob)
-                    {
-                        if (!replaceExisting)
-                        {
-                            throw new ObjectAlreadyExistsException(newJob);
-                        }
-                    }
-                    return StoreJob(conn, newJob, replaceExisting, cancellationToken);
-                },
+                LockOnInsert || replaceExisting ? LockType.TriggerAccess : LockType.None,
+                conn => StoreJob(conn, newJob, replaceExisting, cancellationToken),
                 cancellationToken);
         }
 
-        protected abstract Task StoreJob(
-            TUnitOfWorkConnection conn, 
-            IJobDetail jobDetail, 
+        protected async Task StoreJob(
+            TUnitOfWorkConnection conn,
+            IJobDetail jobDetail,
+            bool replaceExisting,
+            CancellationToken cancellationToken)
+        {
+            var existingJob = await JobExists(conn, jobDetail.Key, cancellationToken).ConfigureAwait(false);
+            if (existingJob)
+            {
+                if (!replaceExisting)
+                {
+                    throw new ObjectAlreadyExistsException(jobDetail);
+                }
+            }
+            await DoStoreJob(conn, jobDetail, existingJob, cancellationToken).ConfigureAwait(false);
+        }
+
+        protected abstract Task DoStoreJob(
+            TUnitOfWorkConnection conn,
+            IJobDetail jobDetail,
             bool existingJob,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
         public async Task StoreJobsAndTriggers(
             IReadOnlyDictionary<IJobDetail, IReadOnlyCollection<ITrigger>> triggersAndJobs,
-            bool replace, 
+            bool replace,
             CancellationToken cancellationToken = default)
         {
             await ExecuteInLock(
@@ -580,12 +588,20 @@ namespace Quartz.Impl
                         await StoreJob(conn, job, replace, cancellationToken).ConfigureAwait(false);
                         foreach (var trigger in triggers)
                         {
-                            await StoreTrigger(conn, (IOperableTrigger) trigger, job, replace, InternalTriggerState.Waiting, false, false, cancellationToken).ConfigureAwait(false);
+                            await StoreTrigger(
+                                conn,
+                                (IOperableTrigger) trigger,
+                                job,
+                                replace,
+                                InternalTriggerState.Waiting,
+                                forceState: false,
+                                false,
+                                cancellationToken).ConfigureAwait(false);
                         }
                     }
                 }, cancellationToken).ConfigureAwait(false);
         }
-        
+
         /// <inheritdoc />
         public Task TriggeredJobComplete(
             IOperableTrigger trigger,
@@ -683,35 +699,35 @@ namespace Quartz.Impl
         }
 
         protected abstract Task UpdateTriggerStatesForJobFromOtherState(
-            TUnitOfWorkConnection conn, 
-            JobKey jobKey, 
-            InternalTriggerState newState, 
-            InternalTriggerState oldState, 
+            TUnitOfWorkConnection conn,
+            JobKey jobKey,
+            InternalTriggerState newState,
+            InternalTriggerState oldState,
             CancellationToken cancellationToken);
 
         protected abstract Task UpdateJobData(
-            TUnitOfWorkConnection conn, 
-            IJobDetail jobDetail, 
+            TUnitOfWorkConnection conn,
+            IJobDetail jobDetail,
             CancellationToken cancellationToken);
 
         protected abstract Task DeleteFiredTrigger(
-            TUnitOfWorkConnection conn, 
+            TUnitOfWorkConnection conn,
             string triggerFireInstanceId,
             CancellationToken cancellationToken);
 
         protected abstract Task UpdateTriggerStatesForJob(
-            TUnitOfWorkConnection conn, 
-            JobKey triggerJobKey, 
-            InternalTriggerState state, 
+            TUnitOfWorkConnection conn,
+            JobKey triggerJobKey,
+            InternalTriggerState state,
             CancellationToken cancellationToken);
 
         protected abstract Task UpdateTriggerState(
-            TUnitOfWorkConnection conn, 
-            TriggerKey triggerKey, 
-            InternalTriggerState state, 
+            TUnitOfWorkConnection conn,
+            TriggerKey triggerKey,
+            InternalTriggerState state,
             CancellationToken cancellationToken);
 
-        
+
         protected async Task RetryExecuteInNonManagedTXLock(
             LockType lockType,
             Func<TUnitOfWorkConnection, Task> txCallback,
@@ -802,7 +818,7 @@ namespace Quartz.Impl
             try
             {
                 return await ExecuteInLock(
-                    LockType.TriggerAccess, 
+                    LockType.TriggerAccess,
                     conn => RemoveCalendar(conn, calendarName, cancellationToken),
                     cancellationToken).ConfigureAwait(false);
             }
@@ -837,10 +853,10 @@ namespace Quartz.Impl
                 throw new JobPersistenceException($"Couldn't retrieve calendar: {e.Message}", e);
             }
         }
-        
+
         protected abstract Task<ICalendar> RetrieveCalendar(
             TUnitOfWorkConnection conn,
-            string calendarName, 
+            string calendarName,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
@@ -876,7 +892,7 @@ namespace Quartz.Impl
                 throw new JobPersistenceException("Couldn't obtain number of triggers: " + e.Message, e);
             }
         }
-        
+
         protected abstract Task<int> GetNumberOfTriggers(
             TUnitOfWorkConnection conn,
             CancellationToken cancellationToken);
@@ -902,7 +918,7 @@ namespace Quartz.Impl
 
         /// <inheritdoc />
         public async Task<IReadOnlyCollection<JobKey>> GetJobKeys(
-            GroupMatcher<JobKey> matcher, 
+            GroupMatcher<JobKey> matcher,
             CancellationToken cancellationToken = default)
         {
             try
@@ -927,18 +943,18 @@ namespace Quartz.Impl
             try
             {
                 return await ExecuteWithoutLock(
-                    conn => GetTriggerKeys(conn, matcher, cancellationToken), 
+                    conn => GetTriggerKeys(conn, matcher, cancellationToken),
                     cancellationToken).ConfigureAwait(false);
             }
             catch (Exception e)
             {
                 throw new JobPersistenceException($"Couldn't obtain trigger names: {e.Message}", e);
-            }        
+            }
         }
 
         protected abstract Task<IReadOnlyCollection<TriggerKey>> GetTriggerKeys(
-            TUnitOfWorkConnection conn, 
-            GroupMatcher<TriggerKey> groupMatcher, 
+            TUnitOfWorkConnection conn,
+            GroupMatcher<TriggerKey> groupMatcher,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
@@ -953,11 +969,11 @@ namespace Quartz.Impl
             catch (Exception e)
             {
                 throw new JobPersistenceException($"Couldn't obtain job groups: {e.Message}", e);
-            }    
+            }
         }
 
         protected abstract Task<IReadOnlyCollection<string>> GetJobGroupNames(
-            TUnitOfWorkConnection conn, 
+            TUnitOfWorkConnection conn,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
@@ -972,11 +988,11 @@ namespace Quartz.Impl
             catch (Exception e)
             {
                 throw new JobPersistenceException($"Couldn't obtain trigger groups: {e.Message}", e);
-            }        
+            }
         }
 
         protected abstract Task<IReadOnlyCollection<string>> GetTriggerGroupNames(
-            TUnitOfWorkConnection conn, 
+            TUnitOfWorkConnection conn,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
@@ -995,12 +1011,12 @@ namespace Quartz.Impl
         }
 
         protected abstract Task<IReadOnlyCollection<string>> GetCalendarNames(
-            TUnitOfWorkConnection conn, 
+            TUnitOfWorkConnection conn,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
         public async Task<IReadOnlyCollection<IOperableTrigger>> GetTriggersForJob(
-            JobKey jobKey, 
+            JobKey jobKey,
             CancellationToken cancellationToken = default)
         {
             try
@@ -1016,8 +1032,8 @@ namespace Quartz.Impl
         }
 
         protected abstract Task<IReadOnlyCollection<IOperableTrigger>> GetTriggersForJob(
-            TUnitOfWorkConnection conn, 
-            JobKey jobKey, 
+            TUnitOfWorkConnection conn,
+            JobKey jobKey,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
@@ -1041,12 +1057,12 @@ namespace Quartz.Impl
             TUnitOfWorkConnection conn,
             TriggerKey triggerKey,
             CancellationToken cancellationToken);
-        
+
         protected abstract Task<InternalTriggerState> GetInternalTriggerState(
             TUnitOfWorkConnection conn,
             TriggerKey triggerKey,
             CancellationToken cancellationToken);
-                
+
         public async Task PauseTrigger(TriggerKey triggerKey, CancellationToken cancellationToken = default)
         {
             try
@@ -1059,7 +1075,7 @@ namespace Quartz.Impl
             catch (Exception e)
             {
                 throw new JobPersistenceException($"Couldn't pause trigger '{triggerKey}': {e.Message}", e);
-            }        
+            }
         }
 
         private async Task PauseTrigger(
@@ -1084,7 +1100,7 @@ namespace Quartz.Impl
             CancellationToken cancellationToken = default)
         {
             return ExecuteInLock(
-                LockType.TriggerAccess, 
+                LockType.TriggerAccess,
                 conn => PauseTriggerGroup(conn, matcher, cancellationToken),
                 cancellationToken);
         }
@@ -1136,7 +1152,7 @@ namespace Quartz.Impl
             try
             {
                 await ExecuteInLock(
-                    LockType.TriggerAccess, 
+                    LockType.TriggerAccess,
                     conn => ResumeTrigger(conn, triggerKey, cancellationToken),
                     cancellationToken).ConfigureAwait(false);
             }
@@ -1174,13 +1190,13 @@ namespace Quartz.Impl
                 var oldStates = blocked
                     ? new[] {InternalTriggerState.PausedAndBlocked}
                     : new[] {InternalTriggerState.Paused};
-                
+
                 await UpdateTriggerStateFromOtherStates(conn, triggerKey, newState, oldStates, cancellationToken).ConfigureAwait(false);
             }
         }
-        
+
         protected abstract Task<TriggerStatus> GetTriggerStatus(
-            TUnitOfWorkConnection conn, 
+            TUnitOfWorkConnection conn,
             TriggerKey triggerKey,
             CancellationToken cancellationToken);
 
@@ -1196,7 +1212,7 @@ namespace Quartz.Impl
             try
             {
                 return await ExecuteInLock(
-                    LockType.TriggerAccess, 
+                    LockType.TriggerAccess,
                     conn => ResumeTriggers(conn, matcher, cancellationToken),
                     cancellationToken).ConfigureAwait(false);
             }
@@ -1207,8 +1223,8 @@ namespace Quartz.Impl
         }
 
         protected abstract Task<IReadOnlyCollection<string>> ResumeTriggers(
-            TUnitOfWorkConnection conn, 
-            GroupMatcher<TriggerKey> groupMatcher, 
+            TUnitOfWorkConnection conn,
+            GroupMatcher<TriggerKey> groupMatcher,
             CancellationToken cancellationToken);
 
         public async Task<IReadOnlyCollection<string>> GetPausedTriggerGroups(CancellationToken cancellationToken = default)
@@ -1226,7 +1242,7 @@ namespace Quartz.Impl
         }
 
         protected abstract Task<IReadOnlyCollection<string>> GetPausedTriggerGroups(
-            TUnitOfWorkConnection conn, 
+            TUnitOfWorkConnection conn,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
@@ -1328,7 +1344,7 @@ namespace Quartz.Impl
         }
 
         protected abstract Task ClearAllTriggerGroupsPausedFlag(
-            TUnitOfWorkConnection conn, 
+            TUnitOfWorkConnection conn,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
@@ -1350,7 +1366,8 @@ namespace Quartz.Impl
 
             return await ExecuteInNonManagedTXLock(
                 lockName,
-                conn => AcquireNextTrigger(conn, noLaterThan, maxCount, timeWindow, cancellationToken), async (conn, result) =>
+                conn => AcquireNextTrigger(conn, noLaterThan, maxCount, timeWindow, cancellationToken),
+                async (conn, result) =>
                 {
                     try
                     {
@@ -1376,7 +1393,7 @@ namespace Quartz.Impl
                 },
                 cancellationToken).ConfigureAwait(false);
         }
-        
+
         protected virtual async Task<IReadOnlyList<IOperableTrigger>> AcquireNextTrigger(
             TUnitOfWorkConnection conn,
             DateTimeOffset noLaterThan,
@@ -1400,10 +1417,10 @@ namespace Quartz.Impl
                 try
                 {
                     var keys = await GetTriggerToAcquire(
-                        conn, 
-                        noLaterThan + timeWindow, 
-                        MisfireTime, 
-                        maxCount, 
+                        conn,
+                        noLaterThan + timeWindow,
+                        MisfireTime,
+                        maxCount,
                         cancellationToken).ConfigureAwait(false);
 
                     // No trigger is ready to fire yet.
@@ -1462,12 +1479,12 @@ namespace Quartz.Impl
                         // We now have a acquired trigger, let's add to return list.
                         // If our trigger was no longer in the expected state, try a new one.
                         int rowsUpdated = await UpdateTriggerStateFromOtherStates(
-                            conn, 
-                            triggerKey, 
-                            newState: InternalTriggerState.Acquired, 
-                            oldStates: new [] { InternalTriggerState.Waiting  }, 
+                            conn,
+                            triggerKey,
+                            newState: InternalTriggerState.Acquired,
+                            oldStates: new [] { InternalTriggerState.Waiting  },
                             cancellationToken).ConfigureAwait(false);
-                        
+
                         if (rowsUpdated <= 0)
                         {
                             // TODO: Hum... shouldn't we log a warning here?
@@ -1475,10 +1492,10 @@ namespace Quartz.Impl
                         }
                         nextTrigger.FireInstanceId = GetFiredTriggerRecordId();
                         await AddFiredTrigger(
-                            conn, 
-                            nextTrigger, 
-                            state: InternalTriggerState.Acquired, 
-                            jobDetail: null, 
+                            conn,
+                            nextTrigger,
+                            state: InternalTriggerState.Acquired,
+                            jobDetail: null,
                             cancellationToken).ConfigureAwait(false);
 
                         if (acquiredTriggers.Count == 0)
@@ -1514,7 +1531,7 @@ namespace Quartz.Impl
         }
 
         /// <summary>
-        /// Select the next trigger which will fire to fire between the two given timestamps 
+        /// Select the next trigger which will fire to fire between the two given timestamps
         /// in ascending order of fire time, and then descending by priority.
         /// </summary>
         /// <param name="conn">The conn.</param>
@@ -1525,16 +1542,16 @@ namespace Quartz.Impl
         /// <returns>A (never null, possibly empty) list of the identifiers (Key objects) of the next triggers to be fired.</returns>
         protected abstract Task<IReadOnlyCollection<TriggerKey>> GetTriggerToAcquire(
             TUnitOfWorkConnection conn,
-            DateTimeOffset noLaterThan, 
-            DateTimeOffset noEarlierThan, 
+            DateTimeOffset noLaterThan,
+            DateTimeOffset noEarlierThan,
             int maxCount,
             CancellationToken cancellationToken);
 
         protected abstract Task AddFiredTrigger(
-            TUnitOfWorkConnection conn, 
-            IOperableTrigger trigger, 
-            InternalTriggerState state, 
-            IJobDetail jobDetail, 
+            TUnitOfWorkConnection conn,
+            IOperableTrigger trigger,
+            InternalTriggerState state,
+            IJobDetail jobDetail,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
@@ -1550,7 +1567,7 @@ namespace Quartz.Impl
                         await UpdateTriggerStateFromOtherStates(
                             conn,
                             trigger.Key,
-                            InternalTriggerState.Waiting, 
+                            InternalTriggerState.Waiting,
                             new [] { InternalTriggerState.Acquired },
                             cancellationToken).ConfigureAwait(false);
 
@@ -1570,7 +1587,7 @@ namespace Quartz.Impl
             CancellationToken cancellationToken = default)
         {
             return await ExecuteInNonManagedTXLock(
-                LockType.TriggerAccess, 
+                LockType.TriggerAccess,
                 async conn =>
                 {
                     List<TriggerFiredResult> results = new List<TriggerFiredResult>();
@@ -1742,15 +1759,15 @@ namespace Quartz.Impl
         }
 
         protected abstract Task UpdateFiredTrigger(
-            TUnitOfWorkConnection conn, 
-            IOperableTrigger trigger, 
-            InternalTriggerState state, 
-            IJobDetail job, 
+            TUnitOfWorkConnection conn,
+            IOperableTrigger trigger,
+            InternalTriggerState state,
+            IJobDetail job,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
         public async Task<bool> ReplaceTrigger(
-            TriggerKey triggerKey, 
+            TriggerKey triggerKey,
             IOperableTrigger newTrigger,
             CancellationToken cancellationToken = default)
         {
@@ -1772,11 +1789,7 @@ namespace Quartz.Impl
                             throw new JobPersistenceException("New trigger is not related to the same job as the old trigger.");
                         }
 
-                        bool removedTrigger = await DeleteTriggerAndChildren(conn, triggerKey, cancellationToken).ConfigureAwait(false);
-
-                        await StoreTrigger(conn, newTrigger, job, false, InternalTriggerState.Waiting, false, false, cancellationToken).ConfigureAwait(false);
-
-                        return removedTrigger;
+                        return await DoReplaceTrigger(conn, triggerKey, newTrigger, job, cancellationToken).ConfigureAwait(false);
                     },
                     cancellationToken).ConfigureAwait(false);
             }
@@ -1786,19 +1799,41 @@ namespace Quartz.Impl
             }
         }
 
+        protected virtual async Task<bool> DoReplaceTrigger(
+            TUnitOfWorkConnection conn,
+            TriggerKey triggerKey,
+            IOperableTrigger newTrigger,
+            IJobDetail job,
+            CancellationToken cancellationToken)
+        {
+            bool removedTrigger = await DeleteTriggerAndChildren(conn, triggerKey, cancellationToken).ConfigureAwait(false);
+
+            await StoreTrigger(
+                conn,
+                newTrigger,
+                job,
+                replaceExisting: false,
+                InternalTriggerState.Waiting,
+                forceState: false,
+                recovering: false,
+                cancellationToken).ConfigureAwait(false);
+
+            return removedTrigger;
+        }
+
         protected abstract Task<IJobDetail> GetJobForTrigger(
-            TUnitOfWorkConnection conn, 
+            TUnitOfWorkConnection conn,
             TriggerKey triggerKey,
             CancellationToken cancellationToken);
 
         protected abstract Task<bool> DeleteTriggerAndChildren(
-            TUnitOfWorkConnection conn, 
-            TriggerKey triggerKey, 
+            TUnitOfWorkConnection conn,
+            TriggerKey triggerKey,
             CancellationToken cancellationToken);
-        
+
         protected abstract Task<bool> DeleteJobAndChildren(
-            TUnitOfWorkConnection conn, 
-            JobKey jobKey, 
+            TUnitOfWorkConnection conn,
+            JobKey jobKey,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
@@ -1820,7 +1855,7 @@ namespace Quartz.Impl
 
         /// <inheritdoc />
         public async Task<bool> CalendarExists(
-            string calendarName, 
+            string calendarName,
             CancellationToken cancellationToken = default)
         {
             try
@@ -1859,7 +1894,7 @@ namespace Quartz.Impl
 
         protected abstract Task<bool> JobExists(
             TUnitOfWorkConnection conn,
-            JobKey jobKey, 
+            JobKey jobKey,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
@@ -1881,7 +1916,7 @@ namespace Quartz.Impl
 
         protected abstract Task<bool> TriggerExists(
             TUnitOfWorkConnection conn,
-            TriggerKey triggerKey, 
+            TriggerKey triggerKey,
             CancellationToken cancellationToken);
 
         /// <inheritdoc />
@@ -1901,14 +1936,14 @@ namespace Quartz.Impl
         }
 
         protected abstract Task ClearAllSchedulingData(
-            TUnitOfWorkConnection conn, 
+            TUnitOfWorkConnection conn,
             CancellationToken cancellationToken);
 
         public async Task StoreCalendar(
-            string name, 
-            ICalendar calendar, 
-            bool replaceExisting, 
-            bool updateTriggers, 
+            string name,
+            ICalendar calendar,
+            bool replaceExisting,
+            bool updateTriggers,
             CancellationToken cancellationToken = default)
         {
             try
@@ -1932,14 +1967,14 @@ namespace Quartz.Impl
         protected abstract Task StoreCalendar(
             TUnitOfWorkConnection conn,
             string name,
-            ICalendar calendar, 
-            bool replaceExisting, 
-            bool updateTriggers, 
+            ICalendar calendar,
+            bool replaceExisting,
+            bool updateTriggers,
             CancellationToken cancellationToken);
 
         protected abstract Task<IOperableTrigger> RetrieveTrigger(
             TUnitOfWorkConnection conn,
-            TriggerKey triggerKey, 
+            TriggerKey triggerKey,
             CancellationToken cancellationToken);
 
         public Task StoreTrigger(
@@ -2017,8 +2052,8 @@ namespace Quartz.Impl
         }
 
         protected abstract Task AddPausedTriggerGroup(
-            TUnitOfWorkConnection conn, 
-            string groupName, 
+            TUnitOfWorkConnection conn,
+            string groupName,
             CancellationToken cancellationToken);
 
         protected abstract Task<bool> IsTriggerGroupPaused(
@@ -2027,11 +2062,11 @@ namespace Quartz.Impl
             CancellationToken cancellationToken);
 
         protected abstract Task StoreTrigger(
-            TUnitOfWorkConnection conn, 
-            bool existingTrigger, 
-            IOperableTrigger trigger, 
-            InternalTriggerState state, 
-            IJobDetail job, 
+            TUnitOfWorkConnection conn,
+            bool existingTrigger,
+            IOperableTrigger trigger,
+            InternalTriggerState state,
+            IJobDetail job,
             CancellationToken cancellationToken);
 
         public async Task<bool> RemoveTriggers(
@@ -2064,7 +2099,7 @@ namespace Quartz.Impl
                 conn => RemoveTrigger(conn, triggerKey, null, cancellationToken),
                 cancellationToken);
         }
-        
+
         protected Task<bool> RemoveTrigger(
             TUnitOfWorkConnection conn,
             TriggerKey triggerKey,
@@ -2134,7 +2169,7 @@ namespace Quartz.Impl
             CancellationToken cancellationToken = default)
         {
             return ExecuteInLock(
-                LockType.TriggerAccess, 
+                LockType.TriggerAccess,
                 conn => RemoveJob(conn, jobKey, cancellationToken),
                 cancellationToken);
         }
@@ -2247,8 +2282,8 @@ namespace Quartz.Impl
         /// assumed to be already present (managed).
         /// </summary>
         protected abstract Task<T> ExecuteInLock<T>(
-            LockType lockName, 
-            Func<TUnitOfWorkConnection, Task<T>> txCallback, 
+            LockType lockName,
+            Func<TUnitOfWorkConnection, Task<T>> txCallback,
             CancellationToken cancellationToken);
     }
 }

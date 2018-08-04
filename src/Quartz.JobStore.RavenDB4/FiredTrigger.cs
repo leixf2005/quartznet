@@ -6,7 +6,13 @@ namespace Quartz.Impl.RavenDB
 {
     internal class FiredTrigger
     {
-        public FiredTrigger(string id, string scheduler)
+        private FiredTrigger()
+        {
+        }
+
+        public FiredTrigger(
+            string id,
+            string scheduler) : this()
         {
             Id = id;
             Scheduler = scheduler;

@@ -9,8 +9,6 @@ namespace Quartz.Impl.RavenDB
         {
             Calendars = new Dictionary<string, ICalendar>();
             PausedTriggerGroups = new HashSet<string>();
-            PausedJobGroups = new HashSet<string>();
-            BlockedJobs = new HashSet<string>();
             LastCheckinTime = DateTimeOffset.MinValue;
             CheckinInterval = DateTimeOffset.MinValue;
         }
@@ -21,7 +19,5 @@ namespace Quartz.Impl.RavenDB
         public SchedulerState State { get; set; }
         public Dictionary<string, ICalendar> Calendars { get; private set; }
         public HashSet<string> PausedTriggerGroups { get; private set; }
-        public HashSet<string> PausedJobGroups { get; private set; }
-        public HashSet<string> BlockedJobs { get; private set; }
     }
 }

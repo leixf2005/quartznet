@@ -34,7 +34,7 @@ namespace Quartz.Impl.RavenDB
             return session.Query<Trigger, TriggerIndex>()
                 .Where(x => x.Scheduler == schedulerName);
         }
-        
+
         internal IRavenQueryable<Trigger> QueryTrigger(TriggerKey triggerKey)
         {
             return session.Query<Trigger, TriggerIndex>()
@@ -65,7 +65,7 @@ namespace Quartz.Impl.RavenDB
 
         internal Task<FiredTrigger> LoadFiredTrigger(string entryId, CancellationToken cancellationToken)
         {
-            return session.LoadAsync<FiredTrigger>(schedulerName + "/" + entryId, cancellationToken);
+            return session.LoadAsync<FiredTrigger>(entryId, cancellationToken);
         }
 
         internal Task<Job> LoadJob(JobKey jobKey, CancellationToken cancellationToken)
@@ -78,12 +78,9 @@ namespace Quartz.Impl.RavenDB
             return session.LoadAsync<Job>(id, cancellationToken);
         }
 
-        internal async Task<bool> ExistsAsync(string id)
+        internal Task<bool> ExistsAsync(string id)
         {
-            // TODO wait for fix http://issues.hibernatingrhinos.com/issue/RavenDB-11626
-            
-            //return session.Advanced.ExistsAsync(id);
-            return await session.LoadAsync<object>(id).ConfigureAwait(false) != null;
+            return session.Advanced.ExistsAsync(id);
         }
 
         internal Task StoreAsync(object entity, string id, CancellationToken cancellationToken)
@@ -99,6 +96,11 @@ namespace Quartz.Impl.RavenDB
         internal void Delete(string id)
         {
             session.Delete(id);
+        }
+
+        public IAsyncRawDocumentQuery<T> RawQuery<T>(string query)
+        {
+            return session.Advanced.AsyncRawQuery<T>(query);
         }
 
         public void Dispose()

@@ -11,11 +11,14 @@ namespace Quartz.Impl.RavenDB
             Map = jobs => from job in jobs
                 select new
                 {
-                    job.Name, 
-                    job.Group, 
-                    job.RequestsRecovery, 
+                    job.Name,
+                    job.Group,
+                    job.RequestsRecovery,
                     job.Scheduler
                 };
+
+            Store(x => x.Name, FieldStorage.Yes);
+            Store(x => x.Group, FieldStorage.Yes);
         }
     }
 }

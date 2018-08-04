@@ -17,6 +17,7 @@ namespace Quartz.Impl
 
         private readonly TimeSpan retryInterval;
         private readonly int retryableActionErrorLogThreshold;
+        private readonly TimeSpan checkInterval;
         private readonly ISchedulerSignaler schedulerSignaler;
         private readonly IClusterManagementOperations operations;
 
@@ -32,11 +33,13 @@ namespace Quartz.Impl
             bool makeThreadDaemon,
             TimeSpan retryInterval,
             int retryableActionErrorLogThreshold,
+            TimeSpan checkInterval,
             ISchedulerSignaler schedulerSignaler,
             IClusterManagementOperations operations)
         {
             this.retryInterval = retryInterval;
             this.retryableActionErrorLogThreshold = retryableActionErrorLogThreshold;
+            this.checkInterval = checkInterval;
             this.schedulerSignaler = schedulerSignaler;
             this.operations = operations;
 
@@ -92,7 +95,7 @@ namespace Quartz.Impl
             {
                 token.ThrowIfCancellationRequested();
 
-                TimeSpan timeToSleep = operations.ClusterCheckinInterval;
+                TimeSpan timeToSleep = checkInterval;
                 TimeSpan transpiredTime = SystemTime.UtcNow() - operations.LastCheckin;
                 timeToSleep = timeToSleep - transpiredTime;
                 if (timeToSleep <= TimeSpan.Zero)
