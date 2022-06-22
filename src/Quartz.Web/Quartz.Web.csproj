@@ -24,7 +24,7 @@
     <PackageReference Include="jQuery" Version="2.2.3" />
     <PackageReference Include="jquery.TypeScript.DefinitelyTyped" Version="3.0.6" />
     <PackageReference Include="moment.TypeScript.DefinitelyTyped" Version="1.7.9" />
-    <PackageReference Include="Newtonsoft.Json" Version="10.*" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.*" />
     <PackageReference Include="RequireJS" Version="2.1.17" />
     <PackageReference Include="signalr.TypeScript.DefinitelyTyped" Version="0.3.9" />
     <PackageReference Include="toastr.TypeScript.DefinitelyTyped" Version="0.3.0" />
