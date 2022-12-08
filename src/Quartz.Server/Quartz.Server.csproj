@@ -21,7 +21,7 @@
     <ProjectReference Include="..\Quartz.Serialization.Json\Quartz.Serialization.Json.csproj" />
     <ProjectReference Include="..\Quartz.Plugins\Quartz.Plugins.csproj" />
     <PackageReference Include="log4net" Version="2.0.8" />
-    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
   </ItemGroup>
   <ItemGroup Condition=" '$(TargetFramework)' == '$(TargetFullFrameworkVersion)' ">
     <Reference Include="System" />
